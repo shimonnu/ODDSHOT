@@ -1,0 +1,51 @@
+.drive-admin-header { max-width: 1120px; margin: auto; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.drive-admin-shell { position: relative; max-width: 850px; padding: 20px 32px 80px; margin: auto; }
+.drive-admin-heading { margin-bottom: 30px; }
+.drive-admin-heading h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.4; letter-spacing: -.025em; margin: 11px 0 12px; }
+.drive-admin-heading p, .drive-admin-card>p { color: var(--muted); line-height: 1.9; }
+.drive-admin-card { background: var(--panel-gradient); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px; margin-top: 20px; }
+.drive-admin-card h2 { font-size: 23px; line-height: 1.55; margin-bottom: 13px; }
+.drive-admin-card>p+.button { margin-top: 22px; }
+.drive-admin-icon { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 17px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--accent); }
+.drive-admin-login .drive-admin-icon { margin-bottom: 22px; }
+.drive-admin-login form { display: grid; gap: 12px; margin-top: 26px; }
+.drive-admin-login label { font-size: 14px; font-weight: 600; }
+.drive-admin-login input { background: var(--surface-deep); border: 1px solid var(--control-line); border-radius: 9px; min-height: 50px; padding: 10px 14px; font-size: 16px; }
+.drive-admin-login form .button { justify-content: center; min-height: 50px; margin-top: 5px; }
+.drive-admin-status-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 23px; }
+.drive-admin-badge { border: 1px solid var(--control-line); border-radius: 30px; padding: 6px 13px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.drive-admin-connection.connected .drive-admin-badge { border-color: var(--accent); color: var(--accent); }
+.drive-admin-destination { display: flex; align-items: center; gap: 15px; background: var(--surface-deep); padding: 17px; border: 1px solid var(--line); border-radius: 11px; margin: 23px 0; }
+.drive-admin-destination>svg { color: var(--accent); }
+.drive-admin-destination span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.drive-admin-destination strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
+.drive-admin-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.drive-admin-actions .button { min-height: 48px; }
+.drive-admin-card .drive-admin-small { font-size: 12px; margin-top: 18px; }
+.drive-admin-card .drive-admin-setting-note { font-size: 13px; color: var(--accent); margin: 14px 0; }
+.drive-admin-setup h2 { font-size: 19px; }
+.drive-admin-setup>p { font-size: 14px; }
+.drive-admin-redirect { display: block; background: var(--surface-deep); border: 1px solid var(--control-line); padding: 14px 16px; border-radius: 8px; overflow-wrap: anywhere; font: 13px/1.8 ui-monospace, monospace; margin: 17px 0 22px; user-select: all; }
+.drive-admin-permissions { display: flex; align-items: flex-start; gap: 13px; border-top: 1px solid var(--line); padding-top: 21px; color: var(--muted); font-size: 13px; line-height: 1.9; }
+.drive-admin-permissions>svg { color: var(--accent); margin-top: 3px; }
+.drive-admin-feedback { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; font-size: 14px; line-height: 1.9; }
+.drive-admin-feedback>svg { margin-top: 3px; }
+.drive-admin-feedback.success>svg { color: var(--accent); }
+.drive-admin-feedback.error { border-color: var(--danger); color: var(--danger); }
+.drive-admin-loading { display: flex; align-items: center; justify-content: center; gap: 15px; min-height: 240px; color: var(--muted); }
+.drive-admin-session { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; margin-top: 22px; font-size: 12px; color: var(--muted); }
+.drive-admin-session>span { display: flex; align-items: center; gap: 8px; }
+.drive-admin-session .text-link { font-size: 12px; min-height: 44px; }
+@media (max-width: 650px) {
+  .drive-admin-header { padding: 23px 20px; gap: 12px; }
+  .drive-admin-header .brand { font-size: 24px; }
+  .drive-admin-header .text-link { font-size: 12px; }
+  .drive-admin-shell { padding: 15px 20px 32px; }
+  .drive-admin-heading>p { font-size: 14px; }
+  .drive-admin-card { padding: 23px 20px; }
+  .drive-admin-card h2 { font-size: 21px; }
+  .drive-admin-card>p { font-size: 14px; }
+  .drive-admin-actions .button { width: 100%; justify-content: center; font-size: 12px; padding: 12px; }
+  .drive-admin-session { flex-direction: column; align-items: flex-start; }
+  .drive-admin-session>span { align-items: flex-start; }
+}

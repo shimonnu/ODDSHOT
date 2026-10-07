@@ -1,0 +1,93 @@
+.site-header { position: sticky; top: 0; z-index: 30; }
+html { scroll-padding-top: 110px; }
+.header-add-photo { min-height: 44px; padding: 10px 15px; white-space: nowrap; font-size: 12px; gap: 7px; }
+.header-add-short { display: none; }
+.desktop-nav a[href="/?view=capture"] { display: none; }
+.dialog.wide.capture-dialog { width: min(790px, calc(100vw - 32px)); }
+.capture-dialog .dialog-head { position: sticky; top: -1px; z-index: 2; padding: 0 0 12px; background: var(--canvas); }
+.capture-dialog-intro { margin: 0 0 12px; }
+.capture-dialog>.scoring-mode { margin-top: 0; }
+.capture-dialog-identity { margin: 20px 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); scroll-margin-top: 80px; }
+.capture-identity-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 15px; font-size: 14px; }
+.capture-identity-heading>.text-link { margin-left: auto; font-size: 11px; }
+.capture-selected-profile { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+.capture-selected-profile>span { min-width: 0; overflow-wrap: anywhere; }
+.capture-selected-profile>.text-link { margin-left: auto; flex-shrink: 0; font-size: 11px; }
+.capture-dialog .process-strip { margin-bottom: 19px; padding: 13px 0; }
+.capture-dialog .process-strip>div { font-size: 11px; }
+.capture-dialog .process-strip svg { margin: 0 20px; }
+.capture-dialog .drop-zone { min-height: 278px; padding: 25px 20px 22px; }
+.capture-dialog .upload-illustration { width: 70px; height: 62px; margin-bottom: 13px; }
+.capture-dialog .upload-illustration>svg { width: 37px; }
+.capture-dialog .drop-zone h2 { font-size: 20px; }
+.capture-dialog .capture-buttons { margin: 18px 0 13px; }
+.capture-dialog .sample-section { margin-top: 22px; padding-top: 20px; }
+.capture-dialog .sample-options img { aspect-ratio: 2.3; }
+.capture-dialog .processing-card { min-height: 420px; height: auto; }
+.capture-dialog-note { margin-top: 19px; color: var(--muted); font-size: 11px; line-height: 1.9; }
+.composer-title-hint { display: flex; align-items: start; gap: 7px; margin-top: 9px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.composer-title-hint>svg { color: var(--accent); margin-top: 3px; }
+.photo-title-editor { margin-top: 27px; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-gradient); }
+.title-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.title-editor-heading h2 { margin-top: 7px; font-size: 21px; letter-spacing: -.04em; }
+.title-editor-heading>svg { color: var(--accent); }
+.title-suggestion-source { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; font-size: 10px; color: var(--muted); }
+.title-suggestion-source>.evaluation-badge { font-size: 10px; padding: 3px 7px; }
+.title-suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.title-suggestion-chips>button { display: inline-flex; align-items: center; justify-content: space-between; gap: 9px; text-align: left; padding: 9px 12px; min-height: 44px; max-width: 100%; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--control-line); border-radius: 7px; color: var(--ink); font-size: 12px; transition: border-color .18s, background .18s; }
+.title-suggestion-chips>button:hover, .title-suggestion-chips>button.selected { background: var(--surface-raised); border-color: var(--accent); color: var(--accent); }
+.title-regenerate { color: var(--muted); font-size: 11px; margin-top: 6px; }
+.photo-title-editor form { margin-top: 20px; }
+.photo-title-editor label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.title-editor-input { display: flex; align-items: stretch; gap: 9px; }
+.title-editor-input>input { width: 100%; min-width: 0; min-height: 48px; padding: 11px 13px; border: 1px solid var(--control-line); border-radius: 7px; background: var(--surface-deep); font-size: 13px; color: var(--ink); }
+.title-editor-input>.button { flex-shrink: 0; padding: 11px 15px; font-size: 12px; }
+.title-suggestion-empty { margin-top: 18px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-deep); }
+.title-suggestion-empty p { font-size: 12px; color: var(--muted); line-height: 1.8; }
+.title-suggestion-empty>.text-link { margin-top: 4px; color: var(--accent); justify-content: start; font-size: 12px; }
+.title-editor-note { margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.8; }
+.title-editor-note>span { display: block; margin-top: 4px; }
+@media (max-width: 1150px) {
+  .header-actions { gap: 9px; }
+  .desktop-nav { gap: 18px; }
+  .header-add-photo { padding: 9px 12px; font-size: 11px; }
+}
+@media (max-width: 900px) {
+  .desktop-nav { gap: 15px; }
+  .header-add-photo { padding: 9px 10px; }
+  .photo-title-editor { padding: 20px; }
+  .title-editor-input { flex-wrap: wrap; }
+  .title-editor-input>.button { width: 100%; }
+}
+@media (max-width: 650px) {
+  html { scroll-padding-top: 85px; }
+  .header-inner { padding: 0 17px; }
+  .header-actions { gap: 9px; }
+  .header-add-label { display: none; }
+  .header-add-short { display: inline; }
+  .header-add-photo { padding: 9px 12px; font-size: 12px; gap: 6px; }
+  .header-actions .profile-switch { min-width: 44px; width: 44px; padding: 5px; justify-content: center; }
+  .header-actions .profile-switch>span:not(.avatar), .header-actions .profile-switch>svg:last-child { display: none; }
+  .header-actions .profile-switch>svg:first-child { display: block; }
+  .dialog.wide.capture-dialog { width: calc(100vw - 20px); padding: 20px 17px; max-height: calc(100dvh - 20px); }
+  .capture-dialog .dialog-head { padding-bottom: 9px; }
+  .capture-dialog .dialog-head h2 { font-size: 18px; }
+  .capture-dialog-intro { font-size: 12px; }
+  .capture-dialog-identity { margin: 17px 0; padding: 16px; }
+  .capture-selected-profile { flex-wrap: wrap; gap: 7px; }
+  .capture-selected-profile>.text-link { font-size: 10px; }
+  .capture-identity-heading { flex-wrap: wrap; }
+  .capture-identity-heading>.text-link { min-height: 44px; }
+  .capture-dialog .process-strip>div { font-size: 9px; }
+  .capture-dialog .process-strip svg { margin: 0; }
+  .capture-dialog .drop-zone { padding: 25px 13px 22px; }
+  .capture-dialog .drop-zone h2 { font-size: 18px; }
+  .capture-dialog .sample-options img { aspect-ratio: 1.1; }
+  .capture-dialog .processing-card { min-height: 387px; }
+  .composer-title-hint { font-size: 11px; }
+  .photo-title-editor { margin-top: 23px; padding: 22px 19px; }
+  .title-editor-input>input { font-size: 16px; }
+  .title-editor-heading h2 { font-size: 22px; }
+  .title-suggestion-source { font-size: 11px; }
+  .title-editor-note { font-size: 11px; }
+}
