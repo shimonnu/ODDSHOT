@@ -66,9 +66,10 @@ button { border: 0; }
 .hero-card { min-height: 522px; position: relative; border-radius: var(--radius); overflow: hidden; background: var(--surface-deep); color: var(--ink); }
 .hero-photo { width: 100%; height: 100%; position: absolute; object-fit: cover; object-position: center 48%; filter: saturate(.6) brightness(.75); }
 .hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(21,10,41,.80), rgba(34,22,58,.10)), linear-gradient(0deg, rgba(12,8,29,.82), transparent 45%); }
-.hero-content { position: relative; z-index: 1; padding: 48px 44px 65px; }
+.hero-content { position: relative; z-index: 1; padding: 48px 44px 65px; container-type: inline-size; }
 .hero-kicker { display: flex; align-items: center; gap: 9px; font: 500 10px var(--display); letter-spacing: .14em; color: #ede2ff; }
 .hero-content h1 { font-size: clamp(43px, 4.2vw, 60px); letter-spacing: -.04em; line-height: 1.4; font-weight: 800; margin: 24px 0 16px; }
+.hero-content h1.hero-share-heading { font-size: clamp(20px, 9cqw, 60px); }
 .hero-content p { font-size: 14px; line-height: 1.9; color: #f7f0ff; letter-spacing: .01em; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 22px; font-weight: 600; font-size: 13px; border-radius: 8px; transition: background .18s, transform .18s; border: 1px solid transparent; }
 .button:hover { transform: translateY(-1px); }
