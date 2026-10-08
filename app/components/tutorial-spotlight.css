@@ -1,0 +1,71 @@
+.header-photo-actions { display: flex; align-items: center; gap: 8px; }
+.tutorial-help { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; padding: 0; border: 1px solid var(--control-line); border-radius: 50%; color: var(--accent-hover); background: var(--surface-deep); transition: background 150ms ease, border-color 150ms ease; touch-action: manipulation; }
+.tutorial-help:hover { border-color: var(--accent); background: var(--surface-raised); }
+.tutorial-help:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.tutorial-spotlight {
+  --tour-glow: #9471d8;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  color: var(--ink);
+  font-family: var(--body);
+}
+.tutorial-scrim { position: fixed; background: #070414d9; pointer-events: auto; }
+.tutorial-focus-ring {
+  position: fixed;
+  border: 2px solid var(--accent);
+  border-radius: 13px;
+  box-shadow: 0 0 0 5px #9471d833, 0 0 25px #b496e57a, inset 0 0 15px #e8c77f18;
+  animation: tutorial-star-pulse 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.tutorial-focus-ring::before, .tutorial-focus-ring::after { content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-hover); box-shadow: 0 0 12px var(--accent); }
+.tutorial-focus-ring::before { top: -3px; left: 19%; }
+.tutorial-focus-ring::after { bottom: -3px; right: 19%; }
+.tutorial-pointer { position: fixed; stroke: var(--accent-hover); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px #9471d8b3); pointer-events: none; }
+.tutorial-pointer.down { transform: rotate(180deg); }
+.tutorial-pointer.left { transform: rotate(-90deg); }
+.tutorial-pointer.right { transform: rotate(90deg); }
+.tutorial-card {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px 18px;
+  border: 1px solid #9377b4;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #2c2046, var(--surface-deep) 80%);
+  box-shadow: 0 16px 55px #03020ac4, 0 0 25px #9471d821;
+  pointer-events: auto;
+  overflow: hidden;
+  animation: tutorial-card-appear 180ms ease-out;
+}
+.tutorial-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.tutorial-card-head > span { display: flex; align-items: center; gap: 7px; color: var(--accent-hover); font-size: 11px; letter-spacing: .015em; white-space: nowrap; }
+.tutorial-card-head b { margin-left: 4px; color: var(--muted); font-weight: 500; }
+.tutorial-close { display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: transparent; color: var(--ink); min-height: 44px; min-width: 64px; margin: -6px -8px -6px 0; padding: 7px 8px; border-radius: 9px; font-size: 12px; touch-action: manipulation; }
+.tutorial-close:hover { background: var(--surface-raised); }
+.tutorial-close:focus-visible, .tutorial-next:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tutorial-card-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.tutorial-card.compact { padding-top: 10px; padding-bottom: 12px; gap: 8px; }
+.tutorial-card.compact .tutorial-card-body h2 { font-size: 16px; margin-bottom: 5px; }
+.tutorial-card.compact .tutorial-card-body p { font-size: 12px; }
+.tutorial-card.compact .tutorial-hint { margin-top: 5px; }
+.tutorial-card-body h2 { font-size: 20px; line-height: 1.5; letter-spacing: -.035em; margin-bottom: 8px; }
+.tutorial-card-body p { color: var(--ink); font-size: 14px; line-height: 1.75; }
+.tutorial-card-body .tutorial-hint { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.tutorial-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.tutorial-progress { height: 4px; width: 56px; flex-shrink: 0; border-radius: 10px; background: var(--subtle); overflow: hidden; }
+.tutorial-progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--tour-glow), var(--accent)); border-radius: inherit; transition: width 180ms ease; }
+.tutorial-next { min-height: 44px; padding: 9px 13px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 700; touch-action: manipulation; }
+.tutorial-next:hover { background: var(--accent-hover); }
+.tutorial-action-hint { display: inline-flex; min-height: 36px; align-items: center; gap: 7px; color: var(--accent-hover); font-size: 11px; }
+.tutorial-busy { animation: tutorial-rotate 1s linear infinite; }
+@keyframes tutorial-star-pulse { 0%, 100% { box-shadow: 0 0 0 5px #9471d833, 0 0 25px #b496e57a, inset 0 0 15px #e8c77f18; } 50% { box-shadow: 0 0 0 6px #9471d850, 0 0 36px #b496e59a, inset 0 0 15px #e8c77f22; } }
+@keyframes tutorial-card-appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tutorial-rotate { to { transform: rotate(360deg); } }
+@media (max-width: 430px) { .tutorial-card { padding: 12px 15px 15px; gap: 10px; } .tutorial-card-body h2 { font-size: 18px; } .tutorial-card-body p { font-size: 13px; } .tutorial-card-head > span { gap: 5px; } }
+@media (max-width: 650px) { .header-photo-actions { gap: 6px; } .header-actions { gap: 8px; } .header-actions .profile-switch { min-width: 44px; width: 44px; padding: 5px; justify-content: center; } .header-actions .profile-switch>span:not(.avatar), .header-actions .profile-switch>svg:last-child { display: none; } }
+@media (max-width: 360px) { .header-inner { padding: 0 12px; gap: 8px; } .header-inner .brand { font-size: 20px; gap: 5px; } .header-inner .brand-mark { width: 24px; height: 24px; } .header-inner .brand-mark svg { width: 21px; } .header-actions { gap: 6px; } .header-photo-actions .header-add-photo { padding-left: 8px; padding-right: 8px; } }
+@media (prefers-reduced-motion: reduce) { .tutorial-focus-ring, .tutorial-card, .tutorial-busy { animation: none; } .tutorial-progress span, .tutorial-help { transition: none; } }

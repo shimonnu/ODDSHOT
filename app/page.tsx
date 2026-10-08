@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Camera, Check, CheckCircle2, ChevronDown, Cloud, Compass, Eye, ImagePlus, Images, Info, LoaderCircle, RefreshCw, ScanLine, Sparkles, Trophy, Upload, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Camera, Check, CheckCircle2, ChevronDown, CircleHelp, Cloud, Compass, Eye, ImagePlus, Images, Info, LoaderCircle, RefreshCw, ScanLine, Sparkles, Trophy, Upload, UserRound, X } from "lucide-react";
 import type { AppState, Photo, Profile, Rank } from "@/lib/types";
+import { TutorialSpotlight } from "./components/tutorial-spotlight";
 
 type View = "home" | "capture" | "collection" | "guide" | "result";
 type PendingPhoto = { userId: string; title: string; image: string; sampleKey?: string; requestId: string };
+type TutorialStep = "add" | "profile" | "photo" | "processing" | "result" | "collection-link" | "collection" | "top-link" | "ranking";
 const ranks: Rank[] = ["S", "A", "B", "C", "F"];
 const rankDescriptions = [
   { rank: "S", range: "90–100", name: "未知との遭遇", description: "思わず二度見する、圧倒的な神秘。" },
@@ -98,7 +100,7 @@ function NicknameForm({ profiles, onSelect, onCreate, submitting, error, selecte
   const [name, setName] = useState("");
   const fieldId = useId();
   function submit(event: FormEvent) { event.preventDefault(); onCreate(name); }
-  return <div className="nickname-form">
+  return <div className="nickname-form" data-tour="profile">
     <form onSubmit={submit}>
       <label htmlFor={fieldId}>新しいニックネーム</label>
       <div className="name-input-row"><input id={fieldId} placeholder="例：月の探検家" maxLength={20} value={name} onChange={e => setName(e.target.value)} required autoComplete="nickname" disabled={submitting} aria-describedby={`${fieldId}-error`} /><button className="button primary" disabled={submitting}>{submitting ? <LoaderCircle size={19} className="spin" aria-hidden="true" /> : <>はじめる<ArrowRight size={18} aria-hidden="true" /></>}</button></div>
@@ -133,8 +135,8 @@ function PhotoComposer({ title, onTitleChange, processing, step, preview, isLive
     finally { if (fileInput.current) fileInput.current.value = ""; if (cameraInput.current) cameraInput.current.value = ""; }
   }
   return <div className="photo-composer">
-    {processing ? <div className="processing-card" role="status" aria-live="polite">{preview && <img src={preview} alt="採点中の写真" />}<div className="processing-overlay"><span className="scan-frame"><ScanLine size={56} strokeWidth={1} aria-hidden="true" /></span><LoaderCircle size={28} className="spin" aria-hidden="true" /><h2>{["写真を準備しています", "写真の雰囲気を判定しています", "結果を整えています"][step]}</h2><p>{!title.trim() ? isLive ? "写真に合うタイトルも提案しています" : "デモ採点とタイトル候補を準備しています" : isLive ? "写真と評価基準を照らし合わせています" : "デモ採点の流れを体験しています"}</p><div className="processing-dots">{[0, 1, 2].map(n => <span className={step >= n ? "active" : ""} key={n} />)}</div></div></div> : <>
-      <div className={`drop-zone ${dragging ? "dragging" : ""}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void choose(e.dataTransfer.files[0]); }}><div className="upload-illustration"><ImagePlus size={45} strokeWidth={1.2} aria-hidden="true" /><span className="cross-corner top-left" /><span className="cross-corner top-right" /><span className="cross-corner bottom-left" /><span className="cross-corner bottom-right" /></div><h2>その写真に、未知の気配は？</h2><p>ここに写真をドラッグするか、<br className="mobile-only" />下のボタンから選んでください。</p><div className="capture-buttons"><button className="button primary" onClick={() => { if (requireProfile()) cameraInput.current?.click(); }}><Camera size={19} aria-hidden="true" />写真を撮る</button><button className="button secondary" onClick={() => { if (requireProfile()) fileInput.current?.click(); }}><Upload size={18} aria-hidden="true" />写真を選ぶ</button></div><span className="small-note">JPEG / PNG / WebP · 20 MB まで</span><span className="small-note">撮影は対応するスマートフォンで利用できます</span></div>
+    {processing ? <div className="processing-card" data-tour="processing" role="status" aria-live="polite">{preview && <img src={preview} alt="採点中の写真" />}<div className="processing-overlay"><span className="scan-frame"><ScanLine size={56} strokeWidth={1} aria-hidden="true" /></span><LoaderCircle size={28} className="spin" aria-hidden="true" /><h2>{["写真を準備しています", "写真の雰囲気を判定しています", "結果を整えています"][step]}</h2><p>{!title.trim() ? isLive ? "写真に合うタイトルも提案しています" : "デモ採点とタイトル候補を準備しています" : isLive ? "写真と評価基準を照らし合わせています" : "デモ採点の流れを体験しています"}</p><div className="processing-dots">{[0, 1, 2].map(n => <span className={step >= n ? "active" : ""} key={n} />)}</div></div></div> : <>
+      <div className={`drop-zone ${dragging ? "dragging" : ""}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void choose(e.dataTransfer.files[0]); }}><div className="upload-illustration"><ImagePlus size={45} strokeWidth={1.2} aria-hidden="true" /><span className="cross-corner top-left" /><span className="cross-corner top-right" /><span className="cross-corner bottom-left" /><span className="cross-corner bottom-right" /></div><h2>その写真に、未知の気配は？</h2><p>ここに写真をドラッグするか、<br className="mobile-only" />下のボタンから選んでください。</p><div className="capture-buttons" data-tour="photo"><button className="button primary" onClick={() => { if (requireProfile()) cameraInput.current?.click(); }}><Camera size={19} aria-hidden="true" />写真を撮る</button><button className="button secondary" onClick={() => { if (requireProfile()) fileInput.current?.click(); }}><Upload size={18} aria-hidden="true" />写真を選ぶ</button></div><span className="small-note">JPEG / PNG / WebP · 20 MB まで</span><span className="small-note">撮影は対応するスマートフォンで利用できます</span></div>
       <label className="title-label" htmlFor={titleId}>写真のタイトル<span>任意</span></label><input className="title-input" id={titleId} placeholder="空欄なら、写真からタイトルを提案" value={title} maxLength={60} onChange={e => onTitleChange(e.target.value)} aria-describedby={`${titleId}-hint`} /><p className="composer-title-hint" id={`${titleId}-hint`}><Sparkles size={14} aria-hidden="true" />{isLive ? "画像から AI が候補を提案し、最初の案を付けます。" : "今はデモのタイトル候補を提案し、最初の案を付けます。"} 保存後に自由に編集できます。</p>
       <div className="upload-feedback"><p className="form-error upload-error" role="alert">{uploadError}</p>{uploadError && canRetry && <button className="button secondary" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" />同じ写真でもう一度試す</button>}</div>
       <div className="sample-section"><div className="sample-heading"><span>写真がなくても、体験できます。</span><small>{isLive ? "サンプルを AI で採点" : "サンプル写真で試す"}</small></div><div className="sample-options">{[{ key: "forest", name: "霧の向こう側" }, { key: "sky", name: "宇宙からのサイン" }].map(s => <button key={s.key} onClick={() => { if (requireProfile()) onSample(s.key); }}><img src={`/images/${s.key}.jpg`} alt={s.name} /><span>{s.name}<ArrowUpRight size={17} aria-hidden="true" /></span></button>)}</div></div>
@@ -193,6 +195,7 @@ export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);
   const [modal, setModal] = useState<"profile" | "ranking" | "about" | "capture" | null>(null);
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep | null>(null);
   const [captureProfiles, setCaptureProfiles] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -256,6 +259,7 @@ export default function Home() {
 
   useEffect(() => {
     function readUrl() {
+      setTutorialStep(null);
       const params = new URLSearchParams(window.location.search);
       const next = params.get("view") as View;
       navigate(["capture", "collection", "guide", "result"].includes(next) ? next : "home", params.get("photo") || undefined, false);
@@ -363,6 +367,7 @@ export default function Home() {
     setNameError("");
     setPendingPhoto(null);
     setUploadError("");
+    setTutorialStep(current => current === "profile" ? "photo" : current);
     setToast(`${p.nickname} として参加しました`);
   }
 
@@ -392,16 +397,34 @@ export default function Home() {
 
   function openCapture() {
     setCaptureProfiles(!profile); setNameError(""); setModal("capture");
+    setTutorialStep(current => current === "add" ? profile ? "photo" : "profile" : current);
+  }
+
+  const closeTutorial = useCallback(() => setTutorialStep(null), []);
+
+  function startTutorial() {
+    if (!loaded || processing) return;
+    setModal(null);
+    setTutorialStep("add");
+  }
+
+  function navigateFromMenu(next: View) {
+    if (tutorialStep === "collection-link" && next === "collection") {
+      setScope("all"); setFilter("all"); setTutorialStep("collection");
+    } else if (tutorialStep === "top-link" && next === "home") setTutorialStep("ranking");
+    else closeTutorial();
+    navigate(next);
   }
 
   async function evaluate(image: string, sampleKey?: string, retry?: PendingPhoto) {
     if (evaluationBusy.current || !profile) return;
-    if (!aiReady) { setUploadError("AI 採点の準備がまだ完了していません。管理者に設定を確認してもらってください。"); return; }
+    if (!aiReady) { setUploadError("AI 採点の準備がまだ完了していません。管理者に設定を確認してもらってください。"); setTutorialStep(current => current === "processing" ? "photo" : current); return; }
     evaluationBusy.current = true;
     stateRevision.current += 1;
     const input = retry || { userId: profile.id, title: title.trim(), image, sampleKey, requestId: crypto.randomUUID() };
     setPendingPhoto(input);
     setProcessing(true); setUploadError(""); setPreview(image); setStep(0);
+    setTutorialStep(current => current === "photo" ? "processing" : current);
     const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     try {
       if (!isLive) await wait(500);
@@ -414,9 +437,10 @@ export default function Home() {
       setState(s => ({ ...s, photos: [photo, ...s.photos.filter(existing => existing.id !== photo.id)] }));
       scheduleSync(photo.id, simulateFailure);
       setTitle(""); setModal(null); navigate("result", photo.id);
+      setTutorialStep(current => current === "processing" ? "result" : current);
       setToast(photo.evaluation.isDemo ? "写真とデモ採点を保存しました" : "写真と AI 採点を保存しました");
       void refresh().catch(() => { if (mounted.current) setGlobalError("写真と評価は保存済みです。ランキングの更新をもう一度お試しください。"); });
-    } catch (e) { setUploadError((e as Error).message); }
+    } catch (e) { setUploadError((e as Error).message); setTutorialStep(current => current === "processing" ? "photo" : current); }
     finally { evaluationBusy.current = false; setProcessing(false); setStep(0); }
   }
 
@@ -427,6 +451,7 @@ export default function Home() {
     if (file.size > 20 * 1024 * 1024) { setUploadError("20 MB 以下の写真を選んでください。"); return; }
     fileBusy.current = true;
     setProcessing(true); setStep(0); setPreview("");
+    setTutorialStep(current => current === "photo" ? "processing" : current);
     try {
       const bitmap = await createImageBitmap(file);
       const scale = Math.min(1, 1400 / Math.max(bitmap.width, bitmap.height));
@@ -436,7 +461,7 @@ export default function Home() {
       if (!context) throw new Error("このブラウザでは写真を読み込めませんでした。");
       context.drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
       await evaluate(canvas.toDataURL("image/jpeg", 0.8));
-    } catch (e) { setUploadError(e instanceof Error ? e.message : "写真を読み込めませんでした。別の写真をお試しください。"); }
+    } catch (e) { setUploadError(e instanceof Error ? e.message : "写真を読み込めませんでした。別の写真をお試しください。"); setTutorialStep(current => current === "processing" ? "photo" : current); }
     finally { fileBusy.current = false; setProcessing(false); }
   }
 
@@ -457,13 +482,28 @@ export default function Home() {
   const photoGrid = (photos: Photo[]) => <div className="photo-grid">{photos.map(photo => <PhotoCard key={photo.id} photo={photo} profile={state.profiles.find(p => p.id === photo.userId)} open={() => navigate("result", photo.id)} />)}</div>;
   const rankingRows = (limit?: number) => <div className="ranking-rows">{state.ranking.slice(0, limit).map(p => <div className={`ranking-row ${p.id === userId ? "is-you" : ""}`} key={p.id}><span className={`position pos-${p.position}`}>{String(p.position).padStart(2, "0")}</span><Avatar profile={p} /><div className="ranking-name"><strong>{p.nickname}{p.id === userId && <small>YOU</small>}</strong><span>S <b>{p.sCount}</b><i>·</i>A <b>{p.aCount}</b></span></div><div className="high-count">{p.highCount}<small>枚</small></div></div>)}</div>;
 
+  const tutorialContent: Record<TutorialStep, { step: number; title: string; description: string; hint?: string; nextLabel?: string }> = {
+    add: { step: 1, title: "まずは、写真を追加しましょう。", description: "光っている「写真を追加」を押して、あなたの一枚を準備しましょう。", hint: "強調されたボタンを、そのまま押せます。" },
+    profile: { step: 2, title: "その前に、呼び名を教えてください。", description: "ニックネームを入力して「はじめる」を押しましょう。以前参加した方は「キミはもしかして」から名前を選べます。", hint: "名前を選ぶと、写真の案内へ進みます。" },
+    photo: { step: 2, title: "早速、写真をあげましょう。", description: uploadError || "「写真を撮る」で撮影するか、「写真を選ぶ」で手元の写真を追加しましょう。選ぶと採点・保存が始まります。", hint: uploadError ? "もう一度写真を選ぶか、案内を終了して再試行できます。" : "撮影は対応するスマートフォンで利用できます。" },
+    processing: { step: 2, title: "あなたの一枚を、採点しています。", description: "点数が届くと、結果の案内へ自動で進みます。タイトル案は後から追加されることもあります。", hint: "案内を終了しても、写真の採点・保存は続きます。" },
+    result: { step: 3, title: "追加されました！これがあなたの点数です。", description: selectedPhoto ? `${selectedPhoto.evaluation.score} 点、${selectedPhoto.evaluation.rank} ランクでした。写真の神秘的な雰囲気を、100点満点・5段階で楽しめます。` : "写真の神秘的な雰囲気を、100点満点・5段階で楽しめます。", hint: "S・A・B・C・F の5段階。タイトルは自由に編集できます。", nextLabel: "コレクションの見方へ" },
+    "collection-link": { step: 4, title: "みんなの一枚も、見てみましょう。", description: "「コレクション」を押すと、あなたの写真や、他の人が見つけた不思議が並びます。", hint: "光っている「コレクション」を押してください。" },
+    collection: { step: 4, title: "ここが、みんなのコレクションです。", description: "「みんなの記録」で他の人の写真も見られます。「自分の記録」やランクの絞り込みも使えます。写真を押すと点数や詳しい評価が開きます。", nextLabel: "ランキングの見方へ" },
+    "top-link": { step: 5, title: "最後に、TOPを見てみましょう。", description: "「TOP」を押すと、みんなの高ランク獲得数ランキングが見られます。", hint: "光っている「TOP」を押してください。" },
+    ranking: { step: 5, title: "高ランクを集めて、ランキングへ。", description: "SとAの写真の合計枚数で順位が決まります。写真が保存されると、ランキングも自動で更新されます。", hint: "これで準備完了。あなたの次の不思議を見つけましょう。", nextLabel: "案内を完了する" },
+  };
+  function advanceTutorial() {
+    setTutorialStep(current => current === "result" ? "collection-link" : current === "collection" ? "top-link" : current === "ranking" ? null : current);
+  }
+
   return <>
     <div className="cosmic-sky" aria-hidden="true" />
     <a href="#main" className="skip-link">メインコンテンツへ</a>
     <header className="site-header"><div className="header-inner">
       <a href="/" className="brand" onClick={e => { e.preventDefault(); navigate("home"); }} aria-label="ODDSHOT TOP"><span className="brand-mark"><Eye size={27} strokeWidth={1.7} aria-hidden="true" /></span><span>ODDSHOT<span className="brand-dot">.</span></span></a>
-      <nav className="desktop-nav" aria-label="メインナビゲーション">{navigation.map(item => <a key={item.view} href={item.view === "home" ? "/" : `/?view=${item.view}`} className={(view === item.view || view === "result" && item.view === "collection") ? "active" : ""} aria-current={view === item.view ? "page" : undefined} onClick={e => { e.preventDefault(); navigate(item.view); }}>{item.label}</a>)}</nav>
-      <div className="header-actions"><button className="button primary header-add-photo" onClick={openCapture} disabled={!loaded} aria-label="写真を追加"><Camera size={18} aria-hidden="true" /><span className="header-add-label">写真を追加</span><span className="header-add-short">追加</span></button><button className={`mock-pill ${isLive ? "live" : ""}`} onClick={() => setModal("about")}><span />{isLive ? "AI MODE" : "DEMO"}<Info size={13} aria-hidden="true" /></button><button className="profile-switch" onClick={() => { setNameError(""); setModal("profile"); }} aria-label={profile ? `${profile.nickname}、名前を切り替える` : "ニックネームを登録または選択"}>{profile ? <Avatar profile={profile} size="small" /> : <UserRound size={19} aria-hidden="true" />}<span>{profile?.nickname || "参加する"}</span><ChevronDown size={14} aria-hidden="true" /></button></div>
+      <nav className="desktop-nav" aria-label="メインナビゲーション">{navigation.map(item => <a key={item.view} data-tour={item.view === "home" ? "top-link" : item.view === "collection" ? "collection-link" : undefined} href={item.view === "home" ? "/" : `/?view=${item.view}`} className={(view === item.view || view === "result" && item.view === "collection") ? "active" : ""} aria-current={view === item.view ? "page" : undefined} onClick={e => { e.preventDefault(); navigateFromMenu(item.view); }}>{item.label}</a>)}</nav>
+      <div className="header-actions"><div className="header-photo-actions"><button data-tour="add" className="button primary header-add-photo" onClick={openCapture} disabled={!loaded} aria-label="写真を追加"><Camera size={18} aria-hidden="true" /><span className="header-add-label">写真を追加</span><span className="header-add-short">追加</span></button><button className="tutorial-help" aria-label="使い方のチュートリアルを始める" title="使い方を見てみる" aria-expanded={tutorialStep !== null} onClick={startTutorial} disabled={!loaded || processing}><CircleHelp size={21} aria-hidden="true" /></button></div><button className={`mock-pill ${isLive ? "live" : ""}`} onClick={() => setModal("about")}><span />{isLive ? "AI MODE" : "DEMO"}<Info size={13} aria-hidden="true" /></button><button className="profile-switch" onClick={() => { setNameError(""); setModal("profile"); }} aria-label={profile ? `${profile.nickname}、名前を切り替える` : "ニックネームを登録または選択"}>{profile ? <Avatar profile={profile} size="small" /> : <UserRound size={19} aria-hidden="true" />}<span>{profile?.nickname || "参加する"}</span><ChevronDown size={14} aria-hidden="true" /></button></div>
     </div></header>
 
     <main id="main" className="main-shell">
@@ -478,7 +518,7 @@ export default function Home() {
             <div className="hero-content"><div className="hero-kicker"><ScanLine size={16} aria-hidden="true" />FIND YOUR NEXT MYSTERY</div><h1>その一枚、<br />何かある。</h1><p>いつもの景色に、未知の気配。<br />あなたが見つけた「奇妙」を、集めよう。</p><button className="button primary hero-button" onClick={openCapture}><Camera size={19} aria-hidden="true" />写真を撮る・選ぶ<ArrowUpRight size={20} aria-hidden="true" /></button><div className="hero-footnote">写真の雰囲気を楽しむ、スピリチュアル採点。</div></div>
             <div className="hero-caption"><span>001 / THE SILENT FOREST</span><span>DEMO PHOTO</span></div>
           </div>
-          <aside className="leaderboard"><div className="leaderboard-heading"><span className="section-label">HALL OF ODD</span><Trophy size={23} strokeWidth={1.4} aria-hidden="true" /></div><h2>奇妙を集めた人たち</h2><p className="panel-description">S・A ランクの獲得枚数ランキング</p><div className="ranking-rule"><span className="mini-rank">S</span><span>＋</span><span className="mini-rank a">A</span><span className="ranking-rule-tail">= 高ランク獲得数</span></div>{rankingRows(4)}<button className="text-link ranking-link" onClick={() => setModal("ranking")}>ランキングをすべて見る<ArrowRight size={18} aria-hidden="true" /></button><div className="ranking-bottom"><span className="status-dot" />写真の保存後に更新</div></aside>
+          <aside className="leaderboard" data-tour="ranking"><div className="leaderboard-heading"><span className="section-label">HALL OF ODD</span><Trophy size={23} strokeWidth={1.4} aria-hidden="true" /></div><h2>奇妙を集めた人たち</h2><p className="panel-description">S・A ランクの獲得枚数ランキング</p><div className="ranking-rule"><span className="mini-rank">S</span><span>＋</span><span className="mini-rank a">A</span><span className="ranking-rule-tail">= 高ランク獲得数</span></div>{rankingRows(4)}<button className="text-link ranking-link" onClick={() => { closeTutorial(); setModal("ranking"); }}>ランキングをすべて見る<ArrowRight size={18} aria-hidden="true" /></button><div className="ranking-bottom"><span className="status-dot" />写真の保存後に更新</div></aside>
         </section>
 
         <section className={`join-panel ${profile ? "joined" : ""}`} aria-label="参加者の登録">
@@ -496,21 +536,21 @@ export default function Home() {
 
       </section>}
 
-      {view === "collection" && <section className="collection-page"><div className="page-heading page-heading-row"><div><span className="section-label">COLLECTION OF THE UNEXPLAINED</span><h1>不思議の、コレクション。</h1><p>一枚ずつ増えていく、日常の向こう側。</p></div><button className="button primary" onClick={openCapture}><ImagePlus size={19} aria-hidden="true" />写真を追加<ArrowUpRight size={18} aria-hidden="true" /></button></div><div className="collection-toolbar"><div className="scope-toggle" aria-label="写真の表示範囲"><button className={scope === "all" ? "active" : ""} aria-pressed={scope === "all"} onClick={() => setScope("all")}>みんなの記録</button><button className={scope === "mine" ? "active" : ""} aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>自分の記録</button></div><span className="collection-count">{(scope === "all" ? state.photos : ownPhotos).filter(p => filter === "all" || p.evaluation.rank === filter).length} PHOTOS</span></div><div className="rank-filters" aria-label="ランクで絞り込み"><button className={filter === "all" ? "active" : ""} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>すべて</button>{ranks.map(r => <button className={filter === r ? "active" : ""} aria-pressed={filter === r} onClick={() => setFilter(r)} key={r}><span className={`rank-dot rank-${r}`}>{r}</span>ランク</button>)}</div>
+      {view === "collection" && <section className="collection-page"><div className="page-heading page-heading-row"><div><span className="section-label">COLLECTION OF THE UNEXPLAINED</span><h1>不思議の、コレクション。</h1><p>一枚ずつ増えていく、日常の向こう側。</p></div><button className="button primary" onClick={openCapture}><ImagePlus size={19} aria-hidden="true" />写真を追加<ArrowUpRight size={18} aria-hidden="true" /></button></div><div data-tour="collection"><div className="collection-toolbar"><div className="scope-toggle" aria-label="写真の表示範囲"><button className={scope === "all" ? "active" : ""} aria-pressed={scope === "all"} onClick={() => setScope("all")}>みんなの記録</button><button className={scope === "mine" ? "active" : ""} aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>自分の記録</button></div><span className="collection-count">{(scope === "all" ? state.photos : ownPhotos).filter(p => filter === "all" || p.evaluation.rank === filter).length} PHOTOS</span></div><div className="rank-filters" aria-label="ランクで絞り込み"><button className={filter === "all" ? "active" : ""} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>すべて</button>{ranks.map(r => <button className={filter === r ? "active" : ""} aria-pressed={filter === r} onClick={() => setFilter(r)} key={r}><span className={`rank-dot rank-${r}`}>{r}</span>ランク</button>)}</div></div>
         {scope === "mine" && !profile ? <div className="empty-state"><UserRound size={40} strokeWidth={1.3} aria-hidden="true" /><h2>あなたの名前を、教えてください。</h2><p>名前を選ぶと、あなたが集めた写真を表示します。</p><button className="button primary" onClick={() => setModal("profile")}>名前を選ぶ<ArrowRight size={18} aria-hidden="true" /></button></div> : (() => { const visible = (scope === "all" ? state.photos : ownPhotos).filter(p => filter === "all" || p.evaluation.rank === filter); return visible.length ? photoGrid(visible) : <div className="empty-state"><Images size={40} strokeWidth={1.3} aria-hidden="true" /><h2>まだ、見ぬ不思議。</h2><p>{filter === "all" ? "最初の一枚から、コレクションをはじめよう。" : `${filter} ランクの写真はまだありません。`}</p><button className="button primary" onClick={openCapture}>写真を追加する<ArrowRight size={18} aria-hidden="true" /></button></div>; })()}
       </section>}
 
-      {view === "result" && (selectedPhoto ? <section className="result-page"><button className="back-link" onClick={() => navigate("collection")}><ArrowLeft size={17} aria-hidden="true" />コレクションに戻る</button><div className="result-layout"><div className="result-visual"><img src={selectedPhoto.image} alt={selectedPhoto.title} /><div className="result-image-label"><ScanLine size={17} aria-hidden="true" /><span>{selectedPhoto.isSample ? "DEMO PHOTO" : "YOUR DISCOVERY"}</span><span>NO. {selectedPhoto.id.slice(-6).toUpperCase()}</span></div><div className="result-photo-info"><h1>{selectedPhoto.title}</h1><div><Avatar profile={state.profiles.find(p => p.id === selectedPhoto.userId)} size="small" /><span>{state.profiles.find(p => p.id === selectedPhoto.userId)?.nickname}</span><time dateTime={selectedPhoto.createdAt}>{formatDate(selectedPhoto.createdAt)}</time></div></div>{selectedPhoto.userId === userId && <PhotoTitleEditor key={selectedPhoto.id} photo={selectedPhoto} userId={userId} isLive={isLive} onUpdate={updatePhoto} onSaved={() => setToast("タイトルを保存しました")} />}</div><div className="result-detail"><span className="section-label">YOUR SPIRITUAL LEVEL</span><div className="result-grade"><b className={`grade-${selectedPhoto.evaluation.rank}`}>{selectedPhoto.evaluation.rank}</b><div><span>{rankDescriptions.find(r => r.rank === selectedPhoto.evaluation.rank)?.name}</span><strong>{selectedPhoto.evaluation.score}<small> / 100</small></strong><span className={`evaluation-badge ${selectedPhoto.evaluation.isDemo ? "" : "live"}`}>{selectedPhoto.evaluation.isDemo ? "デモ採点" : "AI 採点"}</span></div></div><p className="result-reason">{selectedPhoto.evaluation.reason}</p><div className="tags">{selectedPhoto.evaluation.tags.map(tag => <span key={tag}>{tag}</span>)}</div><div className="score-axes">{axes.map(a => <div className="axis" key={a.key}><div><span>{a.name}</span><strong>{selectedPhoto.evaluation.axes[a.key]}<small> / 25</small></strong></div><div className="axis-track"><span style={{ width: `${selectedPhoto.evaluation.axes[a.key] * 4}%` }} /></div></div>)}</div><div className="result-saved"><div><CheckCircle2 size={21} aria-hidden="true" /><span>写真と評価を保存しました</span></div><SyncLabel photo={selectedPhoto} drive={state.drive} retry={() => void retrySync(selectedPhoto)} retrying={retryingPhotoId === selectedPhoto.id} /><p>{driveNote}</p></div><div className="result-actions"><button className="button primary" onClick={openCapture}><Camera size={18} aria-hidden="true" />次の不思議を探す<ArrowUpRight size={18} aria-hidden="true" /></button><button className="text-link" onClick={() => navigate("guide")}>どう採点したの？<ArrowRight size={17} aria-hidden="true" /></button></div><p className="demo-note">{selectedPhoto.evaluation.isDemo ? "操作確認用のデモ採点です。" : "写真の印象を評価基準に照らし合わせた AI 採点です。"} 説明は判定項目に応じて組み立てています。{(selectedPhoto.evaluation.criteriaVersion || selectedPhoto.evaluation.ai?.criteriaVersion) && <span className="criteria-version">採点基準：{selectedPhoto.evaluation.criteriaVersion || selectedPhoto.evaluation.ai?.criteriaVersion}</span>}</p></div></div></section> : <div className="empty-state"><Images size={35} aria-hidden="true" /><h1>写真が見つかりませんでした。</h1><button className="button primary" onClick={() => navigate("collection")}>コレクションへ</button></div>)}
+      {view === "result" && (selectedPhoto ? <section className="result-page"><button className="back-link" onClick={() => navigate("collection")}><ArrowLeft size={17} aria-hidden="true" />コレクションに戻る</button><div className="result-layout"><div className="result-visual"><img src={selectedPhoto.image} alt={selectedPhoto.title} /><div className="result-image-label"><ScanLine size={17} aria-hidden="true" /><span>{selectedPhoto.isSample ? "DEMO PHOTO" : "YOUR DISCOVERY"}</span><span>NO. {selectedPhoto.id.slice(-6).toUpperCase()}</span></div><div className="result-photo-info"><h1>{selectedPhoto.title}</h1><div><Avatar profile={state.profiles.find(p => p.id === selectedPhoto.userId)} size="small" /><span>{state.profiles.find(p => p.id === selectedPhoto.userId)?.nickname}</span><time dateTime={selectedPhoto.createdAt}>{formatDate(selectedPhoto.createdAt)}</time></div></div>{selectedPhoto.userId === userId && <PhotoTitleEditor key={selectedPhoto.id} photo={selectedPhoto} userId={userId} isLive={isLive} onUpdate={updatePhoto} onSaved={() => setToast("タイトルを保存しました")} />}</div><div className="result-detail"><span className="section-label">YOUR SPIRITUAL LEVEL</span><div className="result-grade" data-tour="result"><b className={`grade-${selectedPhoto.evaluation.rank}`}>{selectedPhoto.evaluation.rank}</b><div><span>{rankDescriptions.find(r => r.rank === selectedPhoto.evaluation.rank)?.name}</span><strong>{selectedPhoto.evaluation.score}<small> / 100</small></strong><span className={`evaluation-badge ${selectedPhoto.evaluation.isDemo ? "" : "live"}`}>{selectedPhoto.evaluation.isDemo ? "デモ採点" : "AI 採点"}</span></div></div><p className="result-reason">{selectedPhoto.evaluation.reason}</p><div className="tags">{selectedPhoto.evaluation.tags.map(tag => <span key={tag}>{tag}</span>)}</div><div className="score-axes">{axes.map(a => <div className="axis" key={a.key}><div><span>{a.name}</span><strong>{selectedPhoto.evaluation.axes[a.key]}<small> / 25</small></strong></div><div className="axis-track"><span style={{ width: `${selectedPhoto.evaluation.axes[a.key] * 4}%` }} /></div></div>)}</div><div className="result-saved"><div><CheckCircle2 size={21} aria-hidden="true" /><span>写真と評価を保存しました</span></div><SyncLabel photo={selectedPhoto} drive={state.drive} retry={() => void retrySync(selectedPhoto)} retrying={retryingPhotoId === selectedPhoto.id} /><p>{driveNote}</p></div><div className="result-actions"><button className="button primary" onClick={openCapture}><Camera size={18} aria-hidden="true" />次の不思議を探す<ArrowUpRight size={18} aria-hidden="true" /></button><button className="text-link" onClick={() => navigate("guide")}>どう採点したの？<ArrowRight size={17} aria-hidden="true" /></button></div><p className="demo-note">{selectedPhoto.evaluation.isDemo ? "操作確認用のデモ採点です。" : "写真の印象を評価基準に照らし合わせた AI 採点です。"} 説明は判定項目に応じて組み立てています。{(selectedPhoto.evaluation.criteriaVersion || selectedPhoto.evaluation.ai?.criteriaVersion) && <span className="criteria-version">採点基準：{selectedPhoto.evaluation.criteriaVersion || selectedPhoto.evaluation.ai?.criteriaVersion}</span>}</p></div></div></section> : <div className="empty-state"><Images size={35} aria-hidden="true" /><h1>写真が見つかりませんでした。</h1><button className="button primary" onClick={() => navigate("collection")}>コレクションへ</button></div>)}
 
       {view === "guide" && <section className="guide-page"><div className="guide-intro"><div><span className="section-label">A GUIDE TO THE UNKNOWN</span><h1>不思議にも、<br />ものさしを。</h1><p>霧に包まれた森、偶然できた謎の模様、<br />UFO を連想する光。<br />写真に宿る「想像したくなる気配」を楽しむ採点です。</p></div><div className="guide-rank-orbit"><span>SPIRITUAL LEVEL</span><div><b>S</b><b>A</b><b>B</b><b>C</b><b>F</b></div><p>0 — 100 POINTS / 5 RANKS</p></div></div><div className="section-heading"><div><span className="section-label">THE FIVE LEVELS</span><h2>5 つの、不思議のレベル。</h2></div><span className="small-note">採点基準は初期版の仮案です</span></div><div className="rank-guide-list">{rankDescriptions.map(r => <div className="rank-guide-row" key={r.rank}><RankBadge rank={r.rank as Rank} large /><strong>{r.name}</strong><p>{r.description}</p><span>{state.criteria?.ranks.find(rule => rule.rank === r.rank) ? `${state.criteria.ranks.find(rule => rule.rank === r.rank)!.min}–${state.criteria.ranks.find(rule => rule.rank === r.rank)!.max}` : r.range}<small>POINTS</small></span></div>)}</div><section className="axes-guide"><div className="section-heading"><div><span className="section-label">WHAT WE LOOK FOR</span><h2>写真の、ここを見ています。</h2></div><span className="small-note">各 25 点・合計 100 点</span></div><div className="axes-guide-grid">{axes.map((a, i) => <div key={a.key}><span>0{i + 1}</span><h3>{a.name}</h3><small>{a.en}</small><p>{["静けさ、霧、奥行き。現実から少し離れたような空気感。", "光のにじみや自然の造形。偶然生まれる幻想的な表情。", "謎の紋様、幾何学、未知の光。都市伝説を連想するモチーフ。", "何が起きたのか想像したくなる、視点や余白、構図。"][i]}</p></div>)}</div></section><section className="scoring-guide-card"><div><span className="section-label">FROM PHOTO TO SCORE</span><h2>一枚の写真から、ひとつの判定。</h2><p>Decisions API が写真と評価基準を照らし合わせ、4 つの観点をまとめて判定します。合計点からランクを決め、判定項目に応じた説明を添えます。</p></div><div className="scoring-guide-flow"><span><ScanLine size={19} aria-hidden="true" />写真と評価基準</span><ArrowRight size={17} aria-hidden="true" /><span><Sparkles size={19} aria-hidden="true" />4 項目を判定</span><ArrowRight size={17} aria-hidden="true" /><span><Trophy size={19} aria-hidden="true" />100 点・5 ランク</span></div><p className="scoring-guide-note">{isLive ? aiReady ? "現在は AI 採点モードです。" : "現在は AI 採点の設定待ちです。" : "現在はデモ採点モードです。"} 判定できなかった写真には点数を付けず、再試行をご案内します。</p></section><div className="guide-footer-note"><Sparkles size={24} strokeWidth={1.4} aria-hidden="true" /><div><h3>想像を楽しもう。</h3><p>UFO やフリーメイソンなどの都市伝説は、写真からの連想として扱います。<br />人物の所属や信仰、超常現象の実在を写真から判断するものではありません。</p></div><button className="button primary" onClick={openCapture}>一枚、試してみる<ArrowUpRight size={18} aria-hidden="true" /></button></div></section>}
       </>}
     </main>
 
     <footer className="site-footer"><span className="footer-brand">ODDSHOT<span>.</span></span><p>見慣れた世界に、まだ見ぬ不思議を。</p><button onClick={() => setModal("about")}>DECISIONS EDITION <ArrowUpRight size={14} aria-hidden="true" /></button><a className="text-link" href="/admin/drive">Drive 管理<ArrowUpRight size={14} aria-hidden="true" /></a></footer>
-    <nav className="mobile-nav" aria-label="モバイルナビゲーション">{navigation.map(item => <a key={item.view} href={item.view === "home" ? "/" : `/?view=${item.view}`} className={view === item.view || view === "result" && item.view === "collection" ? "active" : ""} onClick={e => { e.preventDefault(); navigate(item.view); }}><item.icon size={21} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span></a>)}</nav>
+    <nav className="mobile-nav" aria-label="モバイルナビゲーション">{navigation.map(item => <a key={item.view} data-tour={item.view === "home" ? "top-link" : item.view === "collection" ? "collection-link" : undefined} href={item.view === "home" ? "/" : `/?view=${item.view}`} className={view === item.view || view === "result" && item.view === "collection" ? "active" : ""} onClick={e => { e.preventDefault(); navigateFromMenu(item.view); }}><item.icon size={21} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span></a>)}</nav>
     {toast && <div className="toast" role="status"><CheckCircle2 size={19} aria-hidden="true" />{toast}</div>}
 
-    {modal === "capture" && <Dialog title="あなたの「何かある」を。" onClose={() => { if (!processing) setModal(null); }} className="capture-dialog" dismissDisabled={processing} wide>
+    {modal === "capture" && <Dialog title="あなたの「何かある」を。" onClose={() => { if (!processing) { setModal(null); closeTutorial(); } }} className="capture-dialog" dismissDisabled={processing} wide>
       <p className="dialog-description capture-dialog-intro">撮る、または選ぶ。写真から採点とタイトル提案がはじまります。</p>
       <div className={`scoring-mode ${isLive ? "live" : ""}`}><Sparkles size={14} aria-hidden="true" /><span>{isLive ? aiReady ? "AI 採点モード" : "AI 採点の設定待ち" : "デモ採点モード"}</span><span>{isGoogleDrive ? driveConnected ? "Google Drive に自動同期" : "Google Drive の連携待ち" : "Google Drive 同期はデモ"}</span></div>
       <div className="capture-dialog-identity" ref={captureIdentityRef}>
@@ -523,5 +563,6 @@ export default function Home() {
     {modal === "profile" && <Dialog title={profile ? "あなたの名前を、選ぼう。" : "はじめまして、探検家。"} onClose={() => setModal(null)}><p className="dialog-description">ログイン不要。ニックネームで写真を集められます。</p>{nicknameForm}{profile && <button className="forget-button" onClick={() => { rememberProfile(null); setUserId(null); setModal(null); setToast("このタブの名前をリセットしました。記録は残っています。"); }}>このタブの名前をリセット</button>}</Dialog>}
     {modal === "ranking" && <Dialog title="奇妙を集めた人たち" onClose={() => setModal(null)}><p className="dialog-description">S・A ランクの獲得枚数で順位を決めます。同じ枚数は同じ順位です。</p>{rankingRows()}<p className="identity-note">1 枚の写真を 1 回だけ集計します。</p></Dialog>}
     {modal === "about" && <Dialog title="このアプリでできること" onClose={() => setModal(null)} wide><div className="about-intro"><span className="section-label">ODDSHOT / DECISIONS EDITION</span><p>写真の読み取りと採点を、Decisions API にまとめる構成です。</p></div><ul className="about-list"><li><CheckCircle2 size={19} aria-hidden="true" /><span>ニックネーム登録・既存の名前で再開</span></li><li><CheckCircle2 size={19} aria-hidden="true" /><span>カメラ・写真選択・サンプルで採点とタイトル提案</span></li><li><CheckCircle2 size={19} aria-hidden="true" /><span>写真・ユーザー・評価をデータベースに保存</span></li><li><CheckCircle2 size={19} aria-hidden="true" /><span>S＋A 獲得数ランキング・履歴の絞り込み</span></li><li><Cloud size={19} aria-hidden="true" /><span>{isGoogleDrive ? "Google Drive に写真を自動保存" : "Google Drive の自動同期・失敗・再試行を体験"}</span></li></ul>{!isGoogleDrive && <div className="demo-settings"><div><strong>同期失敗を体験する</strong><p>次に追加する写真のデモ同期を失敗させます。</p></div><button role="switch" aria-checked={simulateFailure} className={`switch ${simulateFailure ? "on" : ""}`} onClick={() => setSimulateFailure(!simulateFailure)} aria-label="同期失敗を体験する"><span /></button></div>}<div className={`about-ai-status ${isLive ? "live" : ""}`}><Sparkles size={22} aria-hidden="true" /><div><strong>{isLive ? aiReady ? "Decisions API で採点します" : "Decisions API の設定待ちです" : "現在はデモ採点です"}</strong><p>{isLive ? aiReady ? "追加した写真を OpenAI に送り、4 つの項目を判定し、別の画像対応 AI でタイトル候補を提案します。サンプル写真も AI で採点します。" : "AI の接続設定が完了すると、写真の採点を利用できます。" : "写真は外部の AI に送信しません。サンプルは固定の結果、追加した写真は操作確認用の採点とデモのタイトル候補です。"}</p></div></div><div className="about-pipeline"><span>写真＋評価基準</span><ArrowRight size={15} aria-hidden="true" /><strong>Decisions API</strong><ArrowRight size={15} aria-hidden="true" /><span>点数・ランク・説明</span></div><p className="demo-note">画像を直接判定し、アプリ側で合計点・ランクと定型の説明を組み立てます。写真・参加者・評価・基準はデータベースに保存します。{driveNote}</p><div className="about-bottom"><span>写真サンプル：Unsplash</span><button className="text-link" onClick={openCapture}>体験してみる<ArrowRight size={18} aria-hidden="true" /></button></div></Dialog>}
+    {tutorialStep && <TutorialSpotlight stepKey={tutorialStep} target={tutorialStep} {...tutorialContent[tutorialStep]} total={5} onClose={closeTutorial} onNext={tutorialContent[tutorialStep].nextLabel ? advanceTutorial : undefined} busy={tutorialStep === "processing"} />}
   </>;
 }
