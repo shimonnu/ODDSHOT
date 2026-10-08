@@ -3,15 +3,15 @@
 .meteor-button.playing { border-color: #d6e98b; background: #334026; box-shadow: 0 0 14px #bce46755; }
 .meteor-button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .meteor-shower { position: fixed; inset: 0; z-index: 90; overflow: hidden; pointer-events: none; user-select: none; contain: strict; }
-.meteor-flight { position: absolute; width: min(var(--meteor-size), 68vw); left: calc(var(--meteor-x) - 60vmin); top: calc(var(--meteor-y) - 60vmin); opacity: 0; animation: bearded-meteor-flight var(--meteor-duration) var(--meteor-delay) linear both; will-change: transform, opacity; }
-.meteor-flight img { display: block; width: 100%; height: auto; max-width: none; transform: rotate(45deg) scaleX(-1); pointer-events: none; }
+.meteor-flight { position: absolute; width: min(var(--meteor-size), 68vw); right: calc(var(--meteor-x) - 60vmin); top: calc(var(--meteor-y) - 60vmin); opacity: 0; animation: bearded-meteor-flight var(--meteor-duration) var(--meteor-delay) linear both; will-change: transform, opacity; }
+.meteor-flight img { display: block; width: 100%; height: auto; max-width: none; transform: rotate(-45deg); pointer-events: none; }
 @keyframes bearded-meteor-flight {
   0% { transform: translate3d(0, 0, 0); opacity: 0; }
   9% { opacity: .88; }
   76% { opacity: .88; }
-  100% { transform: translate3d(145vmax, 145vmax, 0); opacity: 0; }
+  100% { transform: translate3d(-145vmax, 145vmax, 0); opacity: 0; }
 }
-.meteor-shower.gentle .meteor-flight { left: 12vw; top: 21vh; width: min(400px, 65vw); animation: bearded-meteor-glow 1.6s ease-in-out both; will-change: opacity; }
+.meteor-shower.gentle .meteor-flight { left: 12vw; right: auto; top: 21vh; width: min(400px, 65vw); animation: bearded-meteor-glow 1.6s ease-in-out both; will-change: opacity; }
 .meteor-shower.gentle .meteor-flight:nth-child(2) { left: 55vw; top: 48vh; width: min(250px, 40vw); }
 .meteor-shower.gentle .meteor-flight:nth-child(3) { left: 8vw; top: 67vh; width: min(280px, 48vw); }
 @keyframes bearded-meteor-glow { 0%, 100% { opacity: 0; } 45%, 65% { opacity: .7; } }
