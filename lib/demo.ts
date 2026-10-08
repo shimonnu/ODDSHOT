@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Evaluation, Rank } from "./types";
 
-export const sampleKeys = ["forest", "sky", "temple", "stairs", "city", "desk"] as const;
+export const sampleKeys = ["forest", "sky"] as const;
 export type SampleKey = (typeof sampleKeys)[number];
 
 export type ScoringCriteria = {
@@ -141,30 +141,6 @@ const samples: Record<SampleKey, Omit<Evaluation, "id" | "createdAt" | "rank" | 
     reason: "広がる空と印象的な光。空の向こうに未知の世界を想像したくなる、都市伝説らしい余白を感じる一枚です。",
     tags: ["未知との遭遇感", "空のサイン", "光の余韻"],
     axes: { atmosphere: 22, light: 23, symbolism: 17, story: 20 },
-  },
-  temple: {
-    score: 77,
-    reason: "静かな場所と整った構図が、儀式や物語を連想させます。写真の中のモチーフを楽しむための、神秘的な雰囲気の評価です。",
-    tags: ["聖域の雰囲気", "シンボル", "古い物語"],
-    axes: { atmosphere: 20, light: 17, symbolism: 23, story: 17 },
-  },
-  stairs: {
-    score: 65,
-    reason: "奥へ続く形と影の重なりが、日常の中に小さな違和感を生んでいます。もう一歩踏み込んだ先の物語を想像できます。",
-    tags: ["境界の気配", "幾何学", "その先へ"],
-    axes: { atmosphere: 17, light: 15, symbolism: 17, story: 16 },
-  },
-  city: {
-    score: 48,
-    reason: "見慣れた街にも、光や影によって少し不思議な表情が生まれます。今回は日常らしさが強く、神秘的な余白は控えめです。",
-    tags: ["日常の違和感", "街の光", "小さな発見"],
-    axes: { atmosphere: 12, light: 14, symbolism: 10, story: 12 },
-  },
-  desk: {
-    score: 32,
-    reason: "落ち着いた日常の一枚。神秘的な雰囲気は控えめですが、普段の風景を見つめることも、この探索の大切な一部です。",
-    tags: ["いつもの風景", "日常の記録"],
-    axes: { atmosphere: 8, light: 9, symbolism: 6, story: 9 },
   },
 };
 

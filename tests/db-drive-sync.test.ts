@@ -16,7 +16,7 @@ import { processDriveJobs } from "../lib/drive-sync";
 const originalDirectory = process.cwd();
 const fixture = mkdtempSync(path.join(tmpdir(), "oddshot-drive-jobs-"));
 mkdirSync(path.join(fixture, "public/images"), { recursive: true });
-for (const name of ["forest", "sky", "temple", "stairs", "city", "desk"]) copyFileSync(path.join(originalDirectory, `public/images/${name}.jpg`), path.join(fixture, `public/images/${name}.jpg`));
+for (const name of ["forest", "sky"]) copyFileSync(path.join(originalDirectory, `public/images/${name}.jpg`), path.join(fixture, `public/images/${name}.jpg`));
 const database = new DatabaseSync(":memory:");
 database.exec("PRAGMA foreign_keys = ON");
 for (const name of ["0001_initial.sql", "0002_google_drive.sql"]) database.exec(readFileSync(path.join(originalDirectory, "cloudflare/migrations", name), "utf8"));
@@ -158,7 +158,10 @@ test("an edit during upload queues another revision while preserving score and f
   assert.deepEqual((await getState()).ranking, before);
   const regenerated = await generatePhotoTitles("legacy-photo", "owner");
   assert.equal(regenerated.title, edited.title);
-  assert.equal(regenerated.syncStatus, "pending");
+  assert.equal(regenerated.syncStatus, "synced", "new title suggestions do not change the Drive filename");
+  assert.equal(jobRow(next.photoId).requested_revision, 2);
+  const selected = await updatePhotoTitle("legacy-photo", "owner", "選び直した写真名");
+  assert.equal(selected.syncStatus, "pending", "a selected title queues the image filename update");
   assert.equal(jobRow(next.photoId).requested_revision, 3);
 });
 
@@ -223,7 +226,7 @@ test("owner reconnect resumes failed jobs and supersedes in-flight credentials w
   assert.equal(withNewGrant.metadataFileId, "reconnect-metadata");
 });
 
-test("the upload runner pauses without owner authorization and persists partial uploads across retries", async () => {
+test("the upload runner persists one image ID and recovers a lost response without JSON or duplicate media writes", async () => {
   resetJobs();
   await enqueueDrivePhoto("legacy-photo");
   assert.equal((await processDriveJobs()).paused, "disconnected");
@@ -238,7 +241,7 @@ test("the upload runner pauses without owner authorization and persists partial 
   process.env.ODDSHOT_GOOGLE_CREDENTIALS_KEY = Buffer.alloc(32, 17).toString("base64url");
   const scope = "https://www.googleapis.com/auth/drive.file";
   const files = new Map<string, { metadata: Record<string, unknown>; media: Buffer }>();
-  let failMetadata = true;
+  let loseUploadResponse = true;
   let generated = 0;
   let uploadAttempts = 0;
   googleHandler = async (address, init) => {
@@ -248,7 +251,11 @@ test("the upload runner pauses without owner authorization and persists partial 
       return Response.json({ access_token: "integration-access", token_type: "Bearer", scope, ...(init.body.get("grant_type") === "authorization_code" ? { refresh_token: "integration-refresh-secret" } : {}) });
     }
     assert.equal(url.origin, "https://www.googleapis.com", "the test cannot send photos to any external destination");
-    if (url.pathname.endsWith("/generateIds")) { generated++; return Response.json({ ids: ["integration-image-id", "integration-metadata-id"] }); }
+    if (url.pathname.endsWith("/generateIds")) {
+      assert.equal(url.searchParams.get("count"), "1");
+      generated++;
+      return Response.json({ ids: ["integration-image-id"] });
+    }
     if (url.pathname.endsWith(`/${folderId}`)) return Response.json({ id: folderId, name: "共通の保存先", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } });
     const idFromPath = url.pathname.split("/").at(-1)!;
     if (!init.method) {
@@ -265,8 +272,9 @@ test("the upload runner pauses without owner authorization and persists partial 
     const metadata = JSON.parse(body.subarray(metadataStart, metadataEnd).toString("utf8")) as Record<string, unknown>;
     const id = init.method === "POST" ? String(metadata.id) : idFromPath;
     uploadAttempts++;
-    if (metadata.mimeType === "application/json" && failMetadata) return Response.json({ error: { message: "an upstream secret must never enter job errors" } }, { status: 503 });
+    assert.equal(metadata.mimeType, "image/jpeg", "evaluations are never written to Google Drive");
     files.set(id, { metadata: { ...files.get(id)?.metadata, ...metadata }, media: body.subarray(mediaStart, mediaEnd) });
+    if (loseUploadResponse) return Response.json({ error: { message: "an upstream secret must never enter job errors" } }, { status: 503 });
     return Response.json({ id });
   };
   try {
@@ -283,20 +291,17 @@ test("the upload runner pauses without owner authorization and persists partial 
     assert.deepEqual(first, { processed: 1, synced: 0, failed: 1 });
     assert.equal(files.size, 1);
     assert.equal(jobRow("legacy-photo").image_file_id, "integration-image-id");
-    assert.equal(jobRow("legacy-photo").metadata_file_id, "integration-metadata-id");
+    assert.equal(jobRow("legacy-photo").metadata_file_id, null);
     assert.ok(!String(jobRow("legacy-photo").last_error).includes("upstream secret"));
     assert.equal((await getState()).photos.find(photo => photo.id === "legacy-photo")?.syncStatus, "failed");
-    failMetadata = false;
+    loseUploadResponse = false;
     database.exec("UPDATE drive_sync_jobs SET next_attempt_at = '2000-01-01T00:00:00.000Z' WHERE photo_id = 'legacy-photo'");
     assert.deepEqual(await processDriveJobs(), { processed: 1, synced: 1, failed: 0 });
-    assert.equal(generated, 1, "a new app instance reuses persisted file IDs after a partial upload");
-    assert.equal(uploadAttempts, 4);
-    assert.equal(files.size, 2);
+    assert.equal(generated, 1, "a new app instance reuses the persisted image ID after a lost response");
+    assert.equal(uploadAttempts, 1, "an owned immutable image is not uploaded again");
+    assert.equal(files.size, 1);
     assert.deepEqual(files.get("integration-image-id")?.media, bytes);
-    const metadata = JSON.parse(files.get("integration-metadata-id")!.media.toString("utf8")) as { photoId: string; title: string; evaluation: unknown };
-    assert.equal(metadata.photoId, "legacy-photo");
-    assert.equal(metadata.title, (await getDrivePhotoPayload("legacy-photo")).title);
-    assert.deepEqual(metadata.evaluation, evaluation);
+    assert.deepEqual((await getDrivePhotoPayload("legacy-photo")).evaluation, evaluation, "evaluation data remains in D1");
     assert.equal((await getState()).photos.find(photo => photo.id === "legacy-photo")?.syncStatus, "synced");
   } finally { googleHandler = undefined; }
 });

@@ -6,10 +6,6 @@ const unavailable = (): TitleSuggestions => ({ suggestions: [], source: "unavail
 const demoTitles: Record<string, string[]> = {
   forest: ["霧の向こうに、何かいる", "森が隠した静かな秘密", "異世界へ続く森の道"],
   sky: ["宇宙から届いたサイン", "星雲の向こうの気配", "夜空に浮かぶ未知の扉"],
-  temple: ["静寂に包まれた祈りの場所", "時を越える石の記憶", "古い門の向こう側"],
-  stairs: ["どこへ続く、不思議な階段", "光の先に残る気配", "日常から一歩、向こうへ"],
-  city: ["街角に隠れた小さな謎", "いつもの街、その向こう側", "夜の街に残された光"],
-  desk: ["机の上の小さな宇宙", "静かな部屋の不思議な余白", "日常に紛れたひとつの謎"],
 };
 
 export function buildPhotoTitleRequest(bytes: Buffer, mime: string) {

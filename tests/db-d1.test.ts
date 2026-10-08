@@ -11,7 +11,7 @@ import { StorageError } from "../lib/storage";
 const originalDirectory = process.cwd();
 const fixture = mkdtempSync(path.join(tmpdir(), "oddshot-d1-fixture-"));
 mkdirSync(path.join(fixture, "public/images"), { recursive: true });
-for (const name of ["forest", "sky", "temple", "stairs", "city", "desk"]) copyFileSync(path.join(originalDirectory, `public/images/${name}.jpg`), path.join(fixture, `public/images/${name}.jpg`));
+for (const name of ["forest", "sky"]) copyFileSync(path.join(originalDirectory, `public/images/${name}.jpg`), path.join(fixture, `public/images/${name}.jpg`));
 process.chdir(fixture);
 const remote = new DatabaseSync(":memory:");
 remote.exec(`

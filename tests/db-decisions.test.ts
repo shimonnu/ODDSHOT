@@ -4,12 +4,13 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { spawnSync } from "node:child_process";
 import { ApiError, createPhoto, createProfile, generatePhotoTitles, getState, updatePhotoTitle } from "../lib/db";
 
 const originalDirectory = process.cwd();
 const fixture = mkdtempSync(path.join(tmpdir(), "oddshot-db-fixture-"));
 mkdirSync(path.join(fixture, "public/images"), { recursive: true });
-for (const name of ["forest", "sky", "temple", "stairs", "city", "desk"]) {
+for (const name of ["forest", "sky"]) {
   copyFileSync(path.join(originalDirectory, `public/images/${name}.jpg`), path.join(fixture, `public/images/${name}.jpg`));
 }
 // Start with the original schema to verify ALTER migrations preserve real old rows.
@@ -36,8 +37,34 @@ after(() => {
   rmSync(fixture, { recursive: true, force: true });
 });
 
+test("fresh SQLite keeps sample assets separate from participants, posts and rankings", () => {
+  const emptyFixture = mkdtempSync(path.join(tmpdir(), "oddshot-empty-db-fixture-"));
+  try {
+    const result = spawnSync(process.execPath, ["-e", `
+      const assert = require("node:assert/strict");
+      const { getState } = require(${JSON.stringify(path.join(__dirname, "../lib/db.js"))});
+      getState().then(state => {
+        assert.deepEqual(state.profiles, []);
+        assert.deepEqual(state.photos, []);
+        assert.deepEqual(state.ranking, []);
+        assert.equal(state.criteria.version, "decisions-v1");
+        globalThis.oddshotDatabase.close();
+      }).catch(error => { console.error(error); process.exitCode = 1; });
+    `], {
+      cwd: emptyFixture,
+      encoding: "utf8",
+      env: { ...process.env, ODDSHOT_STORAGE_MODE: "sqlite", ODDSHOT_SCORING_MODE: "demo", OPENAI_API_KEY: "" },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  } finally {
+    rmSync(emptyFixture, { recursive: true, force: true });
+  }
+});
+
 test("Decisions result persists with criteria and retries count one photo", async () => {
   const before = await getState();
+  assert.equal(before.profiles.length, 1, "schema migration must not recreate demo participants");
+  assert.equal(before.photos.length, 1, "schema migration must not recreate demo posts");
   const legacy = before.photos.map(photo => ({ id: photo.id, score: photo.evaluation.score }));
   assert.equal(before.criteria?.version, "decisions-v1");
   assert.equal(before.ai?.mode, "demo");
@@ -192,7 +219,7 @@ test("title editing is owner matched, validated, and preserves score, ranking an
   process.env.ODDSHOT_SCORING_MODE = "demo";
   const profile = await createProfile("名前変更の検証");
   const another = await createProfile("別の参加者");
-  const photo = await createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "temple", requestId: "title-owner-validation" });
+  const photo = await createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "sky", requestId: "title-owner-validation" });
   const ranking = (await getState()).ranking;
   let calls = 0;
   globalThis.fetch = async () => { calls++; throw new Error("title edit must not call AI"); };

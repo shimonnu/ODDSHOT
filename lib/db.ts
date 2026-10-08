@@ -106,54 +106,6 @@ function initializeCriteria(database: DatabaseSync): void {
   globalDatabase.oddshotSchemaVersion = "google-drive-v1";
 }
 
-function sqliteScoringCriteria(database: DatabaseSync): ScoringCriteria {
-  const row = database.prepare("SELECT criteria_json FROM scoring_criteria WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1").get() as { criteria_json: string };
-  return JSON.parse(row.criteria_json) as ScoringCriteria;
-}
-
-function seed(database: DatabaseSync): void {
-  if ((database.prepare("SELECT COUNT(*) AS count FROM profiles").get() as { count: number }).count > 0) return;
-  const now = Date.now();
-  const users = ["ミオ", "リク", "アオ", "ナギ", "ウタ"].map((nickname, index) => ({
-    id: `demo-user-${index + 1}`,
-    nickname,
-    color: profileColors[index],
-    createdAt: new Date(now - 7 * 86400000 + index * 1000).toISOString(),
-  }));
-  const seeds: { userIndex: number; key: SampleKey; title: string; score?: number }[] = [
-    { userIndex: 0, key: "forest", title: "霧の向こうに、誰かいる" },
-    { userIndex: 1, key: "sky", title: "空に残されたサイン" },
-    { userIndex: 2, key: "temple", title: "静かな結界" },
-    { userIndex: 3, key: "stairs", title: "その先は、どこへ" },
-    { userIndex: 0, key: "sky", title: "夕暮れの未知との遭遇" },
-    { userIndex: 1, key: "forest", title: "異世界への一本道" },
-    { userIndex: 3, key: "temple", title: "古い物語の入口" },
-    { userIndex: 0, key: "stairs", title: "影をたどって" },
-    { userIndex: 1, key: "city", title: "夜の街の小さな違和感" },
-    { userIndex: 4, key: "desk", title: "いつもの午後" },
-  ];
-  const insertProfile = database.prepare("INSERT INTO profiles (id, nickname, nickname_key, color, created_at) VALUES (?, ?, ?, ?, ?)");
-  const insertPhoto = database.prepare("INSERT INTO photos (id, user_id, title, image_bytes, mime_type, sample_key, created_at, sync_status, sync_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-  const criteria = sqliteScoringCriteria(database);
-  const insertEvaluation = database.prepare("INSERT INTO evaluations (id, photo_id, evaluation_json, created_at, criteria_version) VALUES (?, ?, ?, ?, ?)");
-  database.exec("BEGIN IMMEDIATE");
-  try {
-    for (const user of users) insertProfile.run(user.id, user.nickname, user.nickname.normalize("NFKC").toLocaleLowerCase("ja-JP"), user.color, user.createdAt);
-    seeds.forEach((item, index) => {
-      const id = `demo-photo-${index + 1}`;
-      const createdAt = new Date(now - (index + 1) * 3600000).toISOString();
-      const bytes = sampleBytes(item.key);
-      const evaluation = demoEvaluation(bytes ?? Buffer.from(item.key), item.key, createdAt, item.score, criteria);
-      insertPhoto.run(id, users[item.userIndex].id, item.title, bytes, "image/jpeg", item.key, createdAt, "synced", createdAt);
-      insertEvaluation.run(evaluation.id, id, JSON.stringify(evaluation), createdAt, criteria.version);
-    });
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
-}
-
 function hydrateSampleImages(database: DatabaseSync): void {
   const missing = database.prepare("SELECT id, sample_key FROM photos WHERE sample_key IS NOT NULL AND image_bytes IS NULL").all() as { id: string; sample_key: string }[];
   const update = database.prepare("UPDATE photos SET image_bytes = ? WHERE id = ? AND image_bytes IS NULL");
@@ -189,7 +141,6 @@ function db(): DatabaseSync {
       CREATE INDEX IF NOT EXISTS photos_user_created ON photos(user_id, created_at DESC);
     `);
     initializeCriteria(database);
-    seed(database);
     globalDatabase.oddshotDatabase = database;
   }
   if (globalDatabase.oddshotSchemaVersion !== "google-drive-v1") initializeCriteria(globalDatabase.oddshotDatabase);
@@ -411,10 +362,7 @@ export async function generatePhotoTitles(id: string, userId: unknown): Promise<
     const titleSuggestions = await safeTitleSuggestions(bytes, mime, row.sample_key ?? undefined);
     if (titleSuggestions.source === "unavailable") throw new ApiError("タイトル案を取得できませんでした。少し待ってもう一度お試しください。", 502);
     // Only suggestions change, so a title edited while generation runs is preserved.
-    await database.batch([
-      { sql: "UPDATE photos SET title_suggestions_json = ? WHERE id = ?", params: [JSON.stringify(titleSuggestions), id], mode: "run" },
-      ...(driveMode() === "google" ? [enqueueStatement(id, new Date().toISOString(), true)] : []),
-    ]);
+    await database.run("UPDATE photos SET title_suggestions_json = ? WHERE id = ?", [JSON.stringify(titleSuggestions), id]);
     return photoFromRow(await ownedPhoto(database, id, userId));
   })();
   globalDatabase.oddshotTitlesInFlight ??= new Map();
@@ -519,8 +467,8 @@ export async function claimDriveJob(now = Date.now()): Promise<DriveJob | null> 
   return row ? { photoId: row.photo_id, imageFileId: row.image_file_id, metadataFileId: row.metadata_file_id, attemptCount: row.attempt_count, revision: row.requested_revision, leaseToken: row.lease_token } : null;
 }
 
-export async function assignDriveFileIds(job: DriveJob, ids: { imageFileId: string; metadataFileId: string }): Promise<boolean> {
-  return (await storage().run("UPDATE drive_sync_jobs SET image_file_id = ?, metadata_file_id = ? WHERE photo_id = ? AND lease_token = ? AND status = 'processing' AND image_file_id IS NULL AND metadata_file_id IS NULL", [ids.imageFileId, ids.metadataFileId, job.photoId, job.leaseToken])).changes === 1;
+export async function assignDriveFileIds(job: DriveJob, ids: { imageFileId: string; metadataFileId?: string }): Promise<boolean> {
+  return (await storage().run("UPDATE drive_sync_jobs SET image_file_id = ?, metadata_file_id = COALESCE(metadata_file_id, ?) WHERE photo_id = ? AND lease_token = ? AND status = 'processing' AND image_file_id IS NULL", [ids.imageFileId, ids.metadataFileId ?? null, job.photoId, job.leaseToken])).changes === 1;
 }
 
 export async function completeDriveJob(job: DriveJob, now = Date.now()): Promise<boolean> {

@@ -21,13 +21,12 @@ export async function processDriveJobs(options: { limit?: number } = {}): Promis
     result.processed++;
     try {
       const payload = { ...await getDrivePhotoPayload(job.photoId), folderId: connection.folderId };
-      let ids = job.imageFileId && job.metadataFileId ? { imageFileId: job.imageFileId, metadataFileId: job.metadataFileId } : null;
+      let ids = job.imageFileId ? { imageFileId: job.imageFileId } : null;
       if (!ids) {
-        if (job.imageFileId || job.metadataFileId) throw new GoogleDriveError("Google Drive の保存設定を確認してください。", "configuration");
         const accessToken = await refreshGoogleAccessToken(connection.credentials);
-        const generated = await generateDriveFileIds(accessToken, 2);
-        ids = { imageFileId: generated[0], metadataFileId: generated[1] };
-        // A process can stop after either upload. Future workers retain these IDs and update the same files.
+        const generated = await generateDriveFileIds(accessToken, 1);
+        ids = { imageFileId: generated[0] };
+        // Persist the image ID before upload so retries retain the same file even after a lost response.
         if (!await assignDriveFileIds(job, ids)) continue;
       }
       await syncDrivePhoto(connection.credentials, payload, ids);

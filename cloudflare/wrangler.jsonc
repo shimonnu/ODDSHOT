@@ -6,6 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "vars": {
+    "ODDSHOT_SYNC_CALLBACK_URL": "https://oddshot-nine.vercel.app/api/admin/drive/process"
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

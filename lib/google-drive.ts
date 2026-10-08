@@ -6,7 +6,7 @@ const DRIVE_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const RESPONSE_LIMIT = 64 * 1024;
 const IMAGE_LIMIT = 1.5 * 1024 * 1024;
-const FILE_FIELDS = "id,mimeType,trashed,parents,appProperties";
+const FILE_FIELDS = "id,name,mimeType,trashed,parents,appProperties";
 
 export type GoogleDriveErrorCode = "configuration" | "payload" | "reconnect_required" | "permission" | "not_found" | "conflict" | "transient" | "timeout" | "invalid_response";
 export class GoogleDriveError extends Error {
@@ -22,7 +22,7 @@ export class GoogleDriveError extends Error {
 
 export type GoogleDriveCredentials = { clientId: string; clientSecret: string; refreshToken: string };
 export type GoogleOAuthTokens = { accessToken: string; refreshToken?: string; scope?: string; expiresIn?: number };
-export type DrivePhotoFileIds = { imageFileId: string; metadataFileId: string };
+export type DrivePhotoFileIds = { imageFileId: string };
 export type DrivePhotoPayload = {
   photoId: string;
   userId: string;
@@ -162,7 +162,7 @@ export async function verifyDriveFolder(accessToken: string, folderId: string): 
   return { id: folderId, name: folder.name };
 }
 
-export async function generateDriveFileIds(accessToken: string, count = 2): Promise<string[]> {
+export async function generateDriveFileIds(accessToken: string, count = 1): Promise<string[]> {
   if (!Number.isInteger(count) || count < 1 || count > 1000) throw new GoogleDriveError("Google Drive の保存内容を確認してください。", "payload", 400);
   const response = await accessTokenRequest(accessToken)(urlWithQuery(`${DRIVE_URL}/generateIds`, { count: String(count), space: "drive", type: "files" }));
   if (!response.ok) throw await failure(response);
@@ -180,18 +180,18 @@ function fileName(title: string, photoId: string, extension: string): string {
   return `${cleanTitle}_${cleanId}.${extension}`;
 }
 
-type DriveFile = { id: string; mimeType: string; trashed: boolean; parents: string[]; appProperties: Record<string, unknown> };
+type DriveFile = { id: string; name: string; mimeType: string; trashed: boolean; parents: string[]; appProperties: Record<string, unknown> };
 async function existingFile(send: AuthorizedRequest, id: string): Promise<DriveFile | undefined> {
   const response = await send(urlWithQuery(`${DRIVE_URL}/${encodeURIComponent(id)}`, { fields: FILE_FIELDS, supportsAllDrives: "true" }));
   if (response.status === 404) { await response.body?.cancel(); return undefined; }
   if (!response.ok) throw await failure(response);
   const file = await readJson(response);
-  if (!record(file) || file.id !== id || typeof file.mimeType !== "string" || typeof file.trashed !== "boolean" || !Array.isArray(file.parents) || !file.parents.every(parent => typeof parent === "string") || !record(file.appProperties)) throw invalidResponse();
+  if (!record(file) || file.id !== id || typeof file.name !== "string" || typeof file.mimeType !== "string" || typeof file.trashed !== "boolean" || !Array.isArray(file.parents) || !file.parents.every(parent => typeof parent === "string") || !record(file.appProperties)) throw invalidResponse();
   return file as DriveFile;
 }
-function verifyOwnedFile(file: DriveFile, photoId: string, kind: "image" | "metadata", folderId: string, mimeType: string): void {
+function verifyOwnedFile(file: DriveFile, photoId: string, folderId: string, mimeType: string): void {
   if (file.trashed || file.mimeType !== mimeType || !file.parents.includes(folderId)
-    || file.appProperties.app !== "oddshot" || file.appProperties.photoId !== photoId || file.appProperties.kind !== kind) throw new GoogleDriveError("Google Drive の保存済みファイルを確認してください。", "conflict", 503);
+    || file.appProperties.app !== "oddshot" || file.appProperties.photoId !== photoId || file.appProperties.kind !== "image") throw new GoogleDriveError("Google Drive の保存済みファイルを確認してください。", "conflict", 503);
 }
 function multipart(metadata: Record<string, unknown>, bytes: Uint8Array, mimeType: string): { body: Blob; headers: Record<string, string> } {
   const boundary = `oddshot_${randomUUID()}`;
@@ -201,44 +201,50 @@ function multipart(metadata: Record<string, unknown>, bytes: Uint8Array, mimeTyp
   ]);
   return { body, headers: { "Content-Type": `multipart/related; boundary=${boundary}`, "Content-Length": String(body.size) } };
 }
-async function upsertFile(send: AuthorizedRequest, input: { id: string; name: string; bytes: Uint8Array; mimeType: string; folderId: string; photoId: string; kind: "image" | "metadata" }): Promise<void> {
+async function ensureImageFile(send: AuthorizedRequest, input: { id: string; name: string; bytes: Uint8Array; mimeType: string; folderId: string; photoId: string }): Promise<void> {
   let file = await existingFile(send, input.id);
-  const properties = { app: "oddshot", photoId: input.photoId, kind: input.kind };
+  const properties = { app: "oddshot", photoId: input.photoId, kind: "image" };
   const metadata = { name: input.name, mimeType: input.mimeType, appProperties: properties };
-  if (file) verifyOwnedFile(file, input.photoId, input.kind, input.folderId, input.mimeType);
-  let response = await send(urlWithQuery(file ? `${UPLOAD_URL}/${encodeURIComponent(input.id)}` : UPLOAD_URL, { uploadType: "multipart", fields: "id", supportsAllDrives: "true" }), {
-    method: file ? "PATCH" : "POST", ...multipart(file ? metadata : { ...metadata, id: input.id, parents: [input.folderId] }, input.bytes, input.mimeType),
+  if (file) {
+    verifyOwnedFile(file, input.photoId, input.folderId, input.mimeType);
+    await renameImageFile(send, file, input.name);
+    return;
+  }
+  const response = await send(urlWithQuery(UPLOAD_URL, { uploadType: "multipart", fields: "id", supportsAllDrives: "true" }), {
+    method: "POST", ...multipart({ ...metadata, id: input.id, parents: [input.folderId] }, input.bytes, input.mimeType),
   });
-  if (!file && response.status === 409) {
+  if (response.status === 409) {
     await response.body?.cancel();
     file = await existingFile(send, input.id);
     if (!file) throw new GoogleDriveError("Google Drive の保存内容を確認できませんでした。再試行します。", "transient", 503);
-    verifyOwnedFile(file, input.photoId, input.kind, input.folderId, input.mimeType);
-    response = await send(urlWithQuery(`${UPLOAD_URL}/${encodeURIComponent(input.id)}`, { uploadType: "multipart", fields: "id", supportsAllDrives: "true" }), { method: "PATCH", ...multipart(metadata, input.bytes, input.mimeType) });
+    verifyOwnedFile(file, input.photoId, input.folderId, input.mimeType);
+    await renameImageFile(send, file, input.name);
+    return;
   }
   if (!response.ok) throw await failure(response);
   const result = await readJson(response);
   if (!record(result) || result.id !== input.id) throw invalidResponse();
 }
 
-/** Fixed IDs must be saved in the database before this call so retries update the same pair. */
+async function renameImageFile(send: AuthorizedRequest, file: DriveFile, name: string): Promise<void> {
+  // Photo bytes are immutable. A title revision only needs a filename update.
+  if (file.name === name) return;
+  const response = await send(urlWithQuery(`${DRIVE_URL}/${encodeURIComponent(file.id)}`, { fields: "id", supportsAllDrives: "true" }), {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  });
+  if (!response.ok) throw await failure(response);
+  const result = await readJson(response);
+  if (!record(result) || result.id !== file.id) throw invalidResponse();
+}
+
+/** The fixed image ID must be saved in the database before upload; evaluations stay in the database. */
 export async function syncDrivePhoto(credentials: GoogleDriveCredentials, payload: DrivePhotoPayload, ids: DrivePhotoFileIds): Promise<DrivePhotoFileIds> {
-  for (const id of [payload.folderId, ids.imageFileId, ids.metadataFileId]) validateId(id);
-  if (ids.imageFileId === ids.metadataFileId || !(payload.imageBytes instanceof Uint8Array) || !payload.imageBytes.length || payload.imageBytes.length > IMAGE_LIMIT
+  for (const id of [payload.folderId, ids.imageFileId]) validateId(id);
+  if (!(payload.imageBytes instanceof Uint8Array) || !payload.imageBytes.length || payload.imageBytes.length > IMAGE_LIMIT
     || !["image/jpeg", "image/png", "image/webp"].includes(payload.mimeType)
     || typeof payload.photoId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/u.test(payload.photoId) || typeof payload.title !== "string") throw new GoogleDriveError("Google Drive に保存する写真を確認してください。", "payload", 400);
-  let metadataBytes: Uint8Array;
-  try {
-    metadataBytes = Buffer.from(JSON.stringify({
-      schemaVersion: 1, photoId: payload.photoId, userId: payload.userId, nickname: payload.nickname, title: payload.title, createdAt: payload.createdAt,
-      evaluation: payload.evaluation, criteriaVersion: payload.criteriaVersion ?? payload.evaluation.criteriaVersion ?? payload.evaluation.ai?.criteriaVersion,
-      criteria: payload.criteria, titleSuggestions: payload.titleSuggestions,
-    }, null, 2), "utf8");
-  } catch { throw new GoogleDriveError("Google Drive に保存する評価を確認してください。", "payload", 400); }
-  if (metadataBytes.length > 256 * 1024) throw new GoogleDriveError("Google Drive に保存する評価を確認してください。", "payload", 400);
   const send = await credentialsRequest(credentials);
   const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[payload.mimeType];
-  await upsertFile(send, { id: ids.imageFileId, name: fileName(payload.title, payload.photoId, extension), bytes: payload.imageBytes, mimeType: payload.mimeType, folderId: payload.folderId, photoId: payload.photoId, kind: "image" });
-  await upsertFile(send, { id: ids.metadataFileId, name: fileName(payload.title, payload.photoId, "json"), bytes: metadataBytes, mimeType: "application/json", folderId: payload.folderId, photoId: payload.photoId, kind: "metadata" });
-  return { ...ids };
+  await ensureImageFile(send, { id: ids.imageFileId, name: fileName(payload.title, payload.photoId, extension), bytes: payload.imageBytes, mimeType: payload.mimeType, folderId: payload.folderId, photoId: payload.photoId });
+  return { imageFileId: ids.imageFileId };
 }

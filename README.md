@@ -47,16 +47,16 @@ OPENAI_API_KEY=自分のAPIキー
 
 キーはサーバー側だけで使います。`NEXT_PUBLIC_` を付けず、チャットや公開ファイルに貼り付けないでください。Decisions API はベータ提供中のため、利用する OpenAI プロジェクトでのアクセスを確認する必要があります。実接続モードで新しく追加する写真はサンプルも含めて AI に送られ、API 利用料が発生します。以前のデモ結果はそのまま残ります。
 
-この作業環境では2026年10月8日に、DBの有効基準 `decisions-v1` とサンプル画像を使い、Decisions API の採点と Responses API のタイトル3案生成が両方成功することを確認しました。既存写真を追加・更新せず接続を確認した後、`.env.local` を `decisions` に切り替えて再起動しています。既存15枚の写真・評価と Google Drive の接続は保持しています。
+この作業環境では2026年10月8日に、DBの有効基準 `decisions-v1` とサンプル画像を使い、Decisions API の採点と Responses API のタイトル3案生成が両方成功することを確認しました。既存写真を追加・更新せず接続を確認した後、`.env.local` を `decisions` に切り替えて再起動しています。現在は投稿・ユーザーデータを空にし、採点基準と Google Drive の接続設定を保持しています。
 
 ## 保存と実装範囲
 
 - ユーザー、写真の実体、評価、評価基準は DB に保存します。`ODDSHOT_STORAGE_MODE=sqlite` は `work/oddshot.sqlite`、`d1` は Cloudflare D1 を使います。写真は DB の BLOB です。
 - ブラウザの `sessionStorage` に記憶するのは選択中のユーザーIDだけです。通常はタブを閉じると選択が消えます。DB の名前・写真・成績は残ります。
 - 名前を選ぶだけで参加できます。本人確認・参加者ログインは実装していません。
-- SQLite の初回起動時に5人・10枚のサンプルを用意します。D1 は事前にテーブルと採点基準を準備し、実行時にサンプルを投入しません。
+- 新規 DB はユーザー・投稿・ランキングが0件で始まります。森と星雲の2枚はサーバー側の画像素材として保持し、投稿やユーザーの自動投入は行いません。D1 は事前にテーブルと採点基準を準備します。
 - デモモードのサンプル写真は固定の評価、アップロード写真はファイルに応じたデモ結果です。実接続モードでは、写真を Decisions API が基準に照らして採点します。
-- Google Drive の自動保存は実装済みです。`ODDSHOT_DRIVE_MODE=google` で管理者が Google に保存許可を与えると動きます。`demo` の同期表示は Google Drive には送信しません。Vercel 公開は別途行います。
+- Google Drive の自動保存は実装済みです。`ODDSHOT_DRIVE_MODE=google` で管理者が Google に保存許可を与えると動きます。`demo` の同期表示は Google Drive には送信しません。本番は [ODDSHOT](https://oddshot-nine.vercel.app/) で公開しています。
 - 写真は長辺最大1,400pxの JPEG に変換して保存します。JPEG・PNG・WebP の入力上限20MB、DB保存上限1.5MiBです。原寸保存・HEIC・点数の画像への合成は未実装です。
 - 採点基準は各25点の4項目、S90–100／A75–89／B60–74／C40–59／F0–39の仮案です。新しい基準 `decisions-v1` を DB に保存し、旧版と過去の評価も保持します。
 - Google Drive の管理者設定とバックグラウンド保存・再試行を実装しています。削除と再採点は未実装です。
@@ -107,11 +107,11 @@ npm run migrate:cloudflare
 
 コピー後、投稿・編集を止めた状態で元 DB との確認が成功したら `ODDSHOT_STORAGE_MODE=d1` にして再起動します。元の SQLite は残ります。D1 の制限は SQL 1文100 KB、BLOB または行2,000,000バイトです。[D1 の制限](https://developers.cloudflare.com/d1/platform/limits/)
 
-この作業環境では D1 `oddshot` と専用 Worker `oddshot-storage` を作成し、ユーザー5人・写真15枚・評価15件・採点基準2種類を移行しました。画像ハッシュと全データの一致を確認したうえで、`.env.local` の保存先を `d1` に切り替えています。元の SQLite と移行前バックアップは `work/` に残しています。新しい環境へコピーする場合は `.env.example` の接続情報を設定してください。
+この作業環境は D1 `oddshot` と専用 Worker `oddshot-storage` を使っています。2026年10月8日に、初期テストの投稿・評価・同期ジョブ・登録ユーザーを削除し、採点基準2種類と管理設定を保持しました。ローカルのテスト DB と移行前バックアップも削除しています。新しい環境では `.env.example` の接続情報を設定してください。
 
 ## Google Drive の自動保存
 
-写真・ユーザー・採点データは引き続き DB に保存します。Google Drive には写真ファイルと評価 JSON をペアで保存し、ニックネーム、タイトル候補、採点基準のバージョンと内容も残します。タイトルを変更したときは同じファイルを更新します。Drive に予約したファイル ID を DB に固定してからアップロードするため、途中失敗後の再試行でも重複を防ぎます。写真と JSON の両方を確認してから「Drive 保存済み」にします。
+写真・ユーザー・採点データは引き続き DB に保存します。Google Drive には写真ファイルだけを保存します。評価 JSON は作成せず、ニックネーム・タイトル候補・採点基準・評価は DB に保持します。タイトルを変更したときは同じ画像のファイル名を更新し、候補を再生成しただけでは Drive を更新しません。予約した画像 ID を DB に固定してからアップロードするため、途中失敗後の再試行でも重複を防ぎます。写真ファイルを確認してから「Drive 保存済み」にします。
 
 管理者の接続手順です。
 
@@ -135,13 +135,13 @@ npm run sync:drive
 
 Vercel 公開時は専用 Cloudflare Worker に `ODDSHOT_SYNC_CALLBACK_URL=https://公開ドメイン/api/admin/drive/process` と `ODDSHOT_SYNC_SECRET` を設定し、Cron Trigger を1分間隔 (`* * * * *`) で登録します。Worker の `scheduled` ハンドラーが認証付きでアプリを呼び出します。定期呼び出しを設定するまでは投稿直後の処理は動きますが、失敗後の自動再試行・大量の既存写真の処理には次の呼び出しが必要です。Vercel Hobby の Cron は1日1回のため、ここには使いません。[Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) / [Vercel Hobby Cron の制限](https://vercel.com/docs/cron-jobs/usage-and-pricing)
 
-この作業環境の管理用パスワードは `work/drive-admin.txt` に保存し、認証情報は `.env.local` に設定しています。どちらも公開用 ZIP や Git に含めません。2026年10月8日に D1 の追加テーブルとインデックスを確認し、Drive モードを `google` に切り替えました。管理者の Google 保存許可も完了し、「スピ旅行」フォルダへ既存の写真15枚と評価 JSON 15件を保存しました。全画像の SHA-256 と、評価・採点基準・タイトル・投稿者データが DB と一致することを確認しています。待ち行列は全15件が最新の版で保存済みです。ユーザー5人・写真15枚・評価15件を保持し、ローカルの30秒間隔の自動再試行処理も起動しています。
+この作業環境の管理用パスワードは `work/drive-admin.txt` に保存し、認証情報は `.env.local` に設定しています。どちらも公開用 ZIP や Git に含めません。2026年10月8日に D1 の追加テーブルとインデックスを確認し、Drive モードを `google` に切り替えました。管理者の Google 保存許可も完了し、「スピ旅行」フォルダへ写真を保存します。以前の方式で保存した JSON とテスト写真は、所有者が Drive 側で整理します。アプリは新たな JSON を保存しません。
 
 ## Vercel 公開時の設定
 
-この作業環境では Vercel の `harukishimos-projects/oddshot` プロジェクトを作成し、ローカルのアプリをリンクしています。GitHub のアカウント選択で取り込みが進まないため、CLI でローカルのソースを直接アップロードする方式を準備しました。現時点では環境変数の登録とアプリの公開はまだ行っていません。[プロジェクトの環境変数設定](https://vercel.com/harukishimos-projects/oddshot/settings/environment-variables)
+この作業環境では Vercel の `harukishimos-projects/oddshot` プロジェクトを作成し、ローカルのアプリをリンクしています。GitHub のアカウント選択で取り込みが進まないため、CLI でローカルのソースを直接アップロードし、Production 用の環境変数で [ODDSHOT](https://oddshot-nine.vercel.app/) を公開しました。[プロジェクトの環境変数設定](https://vercel.com/harukishimos-projects/oddshot/settings/environment-variables)
 
-直接アップロードでは `.vercelignore` で秘密環境変数、DB、バックアップ、生成物を除外し、`vercel.json` で Next.js を指定します。Vercel プラグインからのプロジェクト設定変更は権限エラーのため反映されていませんが、フレームワークは公開設定ファイルで指定しています。GitHub からの自動デプロイは未接続です。CLI からの公開時にもコミット作者の本人確認が求められる場合は、そのエラーに従って Vercel の認証情報との一致を確認します。[CLI からの公開手順](https://vercel.com/docs/projects/deploy-from-cli)
+直接アップロードでは `.vercelignore` で秘密環境変数、DB、バックアップ、生成物を除外し、`vercel.json` で Next.js を指定します。フレームワークは公開設定ファイルで指定しています。GitHub からの自動デプロイは未接続なので、ソースの更新後は対象プロジェクトへ CLI でデプロイします。[CLI からの公開手順](https://vercel.com/docs/projects/deploy-from-cli)
 
 次の13個を、ODDSHOT の Vercel プロジェクトの Environment Variables に Production 用として登録します。秘密値は現在の `.env.local` から引き継ぎます。環境変数を変更した場合は、新しいデプロイに反映されます。`.env.local` は公開ファイルや Git に含めません。[Vercel の環境変数](https://vercel.com/docs/environment-variables)
 
@@ -156,14 +156,14 @@ Vercel 公開時は専用 Cloudflare Worker に `ODDSHOT_SYNC_CALLBACK_URL=https
 | `GOOGLE_CLIENT_ID` | 現在と同じ OAuth クライアント ID |
 | `GOOGLE_CLIENT_SECRET` | 現在と同じクライアントシークレット |
 | `GOOGLE_DRIVE_FOLDER_ID` | 現在と同じ保存先フォルダ ID |
-| `GOOGLE_REDIRECT_URI` | `https://公開ドメイン/api/admin/drive/callback` |
+| `GOOGLE_REDIRECT_URI` | `https://oddshot-nine.vercel.app/api/admin/drive/callback` |
 | `ODDSHOT_ADMIN_SECRET` | 現在の管理用パスワード |
 | `ODDSHOT_GOOGLE_CREDENTIALS_KEY` | **現在と同じ暗号化キー** |
 | `ODDSHOT_SYNC_SECRET` | 現在の再試行用シークレット |
 
 公開ドメインが決まったら、同じ Google OAuth クライアントの承認済みリダイレクト URI に `https://公開ドメイン/api/admin/drive/callback` を追加します。ローカルの URI は残せます。同じ DB・クライアント・保存先・暗号化キーと有効な refresh token を使う場合、URL 変更だけで既存の Drive 保存許可を取り直す必要はありません。「テスト中」の場合は上記の有効期限への対応が必要です。
 
-Cloudflare 側は専用 Worker を現行ソースへ更新し、`ODDSHOT_SYNC_CALLBACK_URL=https://公開ドメイン/api/admin/drive/process` と Vercel と同じ `ODDSHOT_SYNC_SECRET` を登録して、1分間隔の Cron Trigger を設定します。既存の D1 binding と接続トークンは保持します。この定期処理はまだ本番に設定していません。公開後、写真投稿 → AI採点とタイトル提案 → D1保存 → Drive保存、および再試行の動作を確認します。
+Cloudflare 側は専用 Worker を現行ソースへ更新し、`ODDSHOT_SYNC_CALLBACK_URL=https://公開ドメイン/api/admin/drive/process` と Vercel と同じ `ODDSHOT_SYNC_SECRET` を登録して、1分間隔の Cron Trigger を設定します。既存の D1 binding と接続トークンは保持します。この定期処理は Worker 側の Cron Trigger で実行します。公開後、写真投稿 → AI採点とタイトル提案 → D1保存 → Drive保存、および再試行の動作を確認します。
 
 Cloudflare のアカウント ID・DB ID・管理用 API トークンは、Vercel アプリの実行時には不要です。Google の refresh token も DB に暗号化保存済みなので、環境変数として追加する必要はありません。
 
@@ -175,4 +175,4 @@ Cloudflare のアカウント ID・DB ID・管理用 API トークンは、Verce
 
 PC・タブレット・スマートフォンに対応し、フォーカス表示、ダイアログのキーボード操作、動きを抑える設定、読み上げ向けの状態通知を用意しています。
 
-写真サンプルは [Unsplash](https://unsplash.com/license) の公開画像です。使用画像ID：`photo-1511497584788-876760111969`、`photo-1462331940025-496dfbfc7564`、`photo-1478436127897-769e1b3f0f36`、`photo-1600210492486-724fe5c67fb0`、`photo-1540959733332-eab4deabeeaf`、`photo-1497215842964-222b430dc094`。
+写真サンプルは [Unsplash](https://unsplash.com/license) の公開画像です。使用画像ID：`photo-1511497584788-876760111969`、`photo-1462331940025-496dfbfc7564`。
