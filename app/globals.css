@@ -450,7 +450,7 @@ button { border: 0; }
   .hero-card { min-height: 486px; }
   .hero-content { padding: 36px 24px 65px; }
   .hero-kicker { font-size: 8px; letter-spacing: .08em; }
-  .hero-stamp { width: 62px; height: 85px; top: 58px; right: 15px; padding: 7px; }
+  .hero-stamp { width: 62px; height: 85px; top: 18px; right: 15px; padding: 7px; }
   .hero-stamp>b { font-size: 37px; margin: 3px 0 4px; }
   .hero-stamp>span { font-size: 5px; }
   .hero-content h1 { font-size: 39px; margin-top: 33px; }
@@ -548,7 +548,7 @@ button { border: 0; }
   .hero-content h1 { font-size: 43px; margin-top: 27px; margin-bottom: 17px; }
   .hero-content p { font-size: 13px; line-height: 1.9; }
   .hero-kicker { font-size: 8px; }
-  .hero-stamp { right: 24px; top: 76px; width: 67px; height: 94px; }
+  .hero-stamp { right: 24px; top: 10px; width: 67px; height: 94px; }
   .hero-stamp>b { font-size: 43px; }
   .hero-stamp>span { font-size: 6px; }
   .hero-button { font-size: 12px; margin-top: 27px; padding: 13px 14px; gap: 10px; }
