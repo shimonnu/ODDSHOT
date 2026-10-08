@@ -165,6 +165,71 @@ test("an edit during upload queues another revision while preserving score and f
   assert.equal(jobRow(next.photoId).requested_revision, 3);
 });
 
+test("late automatic titles queue a Drive rename once and preserve an explicit edit during upload", async () => {
+  const d1Fetch = globalThis.fetch;
+  const originalMode = process.env.ODDSHOT_SCORING_MODE;
+  const originalKey = process.env.OPENAI_API_KEY;
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  try {
+    for (const manuallyEdited of [false, true]) {
+      resetJobs();
+      const tasks: Promise<void>[] = [];
+      let release!: (response: Response) => void;
+      const titleWait = new Promise<Response>(resolve => { release = resolve; });
+      let calls = 0;
+      globalThis.fetch = async (url, init) => {
+        if (!String(url).startsWith("https://api.openai.com/")) return d1Fetch(url, init);
+        calls++;
+        if (String(url).endsWith("/responses")) return titleWait;
+        assert.equal(url, "https://api.openai.com/v1/decisions");
+        const body = JSON.parse(String(init?.body)) as { questions: { type: string; name: string; levels?: { label: string }[] }[] };
+        return Response.json({
+          model: "gpt-6-luna",
+          answers: body.questions.map(question => question.type === "score" ? {
+            type: "score", name: question.name, score: 4, confidence: 0.98,
+            probabilities: question.levels!.map((level, index) => ({ label: level.label, value: index, probability: index === 4 ? 1 : 0 })),
+          } : { type: "predicate", name: question.name, probability: 0.9 }),
+        });
+      };
+      try {
+        const photo = await createPhoto({ userId: "owner", title: "", image: "", sampleKey: "forest", requestId: "late-drive-rename-" + manuallyEdited }, { scheduleBackground: work => { tasks.push(work); } });
+        assert.equal(photo.titleSuggestions?.source, "pending");
+        const job = await claimDriveJob();
+        assert.ok(job);
+        await assignDriveFileIds(job, { imageFileId: "late-title-image-" + manuallyEdited });
+        const beforeEvaluation = photo.evaluation;
+        if (manuallyEdited) await updatePhotoTitle(photo.id, "owner", "自分で付けた写真名");
+        release(Response.json({
+          status: "completed",
+          output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ titles: ["後から届いた写真名", "森に残る気配", "光の記憶"] }) }] }],
+        }));
+        await Promise.all(tasks);
+        assert.equal(jobRow(photo.id).requested_revision, 2, "automatic completion only adds a revision when it changes the filename");
+        assert.equal(jobRow(photo.id).status, "processing", "an existing upload lease is preserved");
+        assert.equal(await completeDriveJob(job), true);
+        assert.equal(jobRow(photo.id).status, "queued");
+        const renamed = await claimDriveJob();
+        assert.ok(renamed);
+        assert.equal(renamed.revision, 2);
+        assert.equal(renamed.imageFileId, "late-title-image-" + manuallyEdited);
+        assert.equal((await getDrivePhotoPayload(photo.id)).title, manuallyEdited ? "自分で付けた写真名" : "後から届いた写真名");
+        await completeDriveJob(renamed);
+        assert.equal(jobRow(photo.id).requested_revision, 2);
+        assert.deepEqual((await getState()).photos.find(item => item.id === photo.id)?.evaluation, beforeEvaluation);
+        assert.equal(calls, 2);
+      } finally {
+        release(Response.json({}, { status: 429 }));
+        await Promise.allSettled(tasks);
+      }
+    }
+  } finally {
+    globalThis.fetch = d1Fetch;
+    process.env.ODDSHOT_SCORING_MODE = originalMode;
+    if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey;
+  }
+});
+
 test("retry backoff survives process changes and permanent failures require a retry request", async () => {
   resetJobs();
   await enqueueDrivePhoto("legacy-photo");

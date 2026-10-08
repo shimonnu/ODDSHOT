@@ -359,6 +359,10 @@ button { border: 0; }
 .mobile-only { display: none; }
 .spin { animation: spin 1.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.title-suggestion-pending { display: flex; align-items: center; gap: 12px; min-height: 90px; margin-top: 18px; padding: 14px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-deep); }
+.title-suggestion-pending>svg { color: var(--accent); }
+.title-suggestion-pending p { color: var(--ink); font-size: 13px; }
+.title-suggestion-pending span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 
 .mock-pill.live>span { background: var(--focus); }
 .photo-evaluation-source { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10px; margin-top: 8px; }

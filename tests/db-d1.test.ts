@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createPhoto, createProfile, generatePhotoTitles, getPhotoImage, getState, updatePhotoTitle, updateSyncStatus } from "../lib/db";
+import { createPhoto, createProfile, generatePhotoTitles, getPhoto, getPhotoImage, getState, updatePhotoTitle, updateSyncStatus } from "../lib/db";
 import { decisionsScoringCriteria, demoEvaluation } from "../lib/demo";
 import { StorageError } from "../lib/storage";
 
@@ -35,11 +35,12 @@ const batches: WireStatement[][] = [];
 let failEvaluation = false;
 let beforeBatch: ((statements: WireStatement[]) => Promise<void>) | undefined;
 const oldFetch = globalThis.fetch;
-const savedEnv = Object.fromEntries(["ODDSHOT_STORAGE_MODE", "ODDSHOT_D1_WORKER_URL", "ODDSHOT_D1_WORKER_TOKEN", "ODDSHOT_SCORING_MODE"].map(key => [key, process.env[key]]));
+const savedEnv = Object.fromEntries(["ODDSHOT_STORAGE_MODE", "ODDSHOT_D1_WORKER_URL", "ODDSHOT_D1_WORKER_TOKEN", "ODDSHOT_SCORING_MODE", "ODDSHOT_DRIVE_MODE", "OPENAI_API_KEY"].map(key => [key, process.env[key]]));
 process.env.ODDSHOT_STORAGE_MODE = "d1";
 process.env.ODDSHOT_D1_WORKER_URL = "https://offline-d1.invalid";
 process.env.ODDSHOT_D1_WORKER_TOKEN = "offline-d1-token";
 process.env.ODDSHOT_SCORING_MODE = "demo";
+process.env.ODDSHOT_DRIVE_MODE = "demo";
 globalThis.fetch = async (url, init) => {
   assert.equal(url, "https://offline-d1.invalid/query", "this test must never call an external AI service");
   assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer offline-d1-token");
@@ -67,6 +68,7 @@ globalThis.fetch = async (url, init) => {
     return Response.json({ error: "保存できませんでした。", code: "storage_unavailable" }, { status: 503 });
   }
 };
+const d1Fetch = globalThis.fetch;
 after(() => {
   globalThis.fetch = oldFetch;
   for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
@@ -154,4 +156,129 @@ test("missing D1 setup and missing active criteria fail without SQLite fallback"
   try { await assert.rejects(getState(), /採点基準.*準備/); }
   finally { remote.exec("UPDATE scoring_criteria SET is_active = 1"); }
   assert.equal(existsSync(path.join(fixture, "work/oddshot.sqlite")), false);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(complete => { resolve = complete; });
+  return { promise, resolve };
+}
+
+function delayAiResponses() {
+  const scoreStarted = deferred<RequestInit | undefined>();
+  const titleStarted = deferred<void>();
+  const score = deferred<Response>();
+  const titles = deferred<Response>();
+  const calls = { scores: 0, titles: 0 };
+  globalThis.fetch = async (url, init) => {
+    if (url === "https://offline-d1.invalid/query") return d1Fetch(url, init);
+    assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer offline-d1-title-key");
+    if (url === "https://api.openai.com/v1/decisions") {
+      calls.scores++;
+      scoreStarted.resolve(init);
+      return score.promise;
+    }
+    assert.equal(url, "https://api.openai.com/v1/responses", "all AI calls must remain offline");
+    calls.titles++;
+    titleStarted.resolve();
+    return titles.promise;
+  };
+  return { score, titles, calls, bothStarted: Promise.all([scoreStarted.promise, titleStarted.promise]) };
+}
+
+function scoredResponse(init: RequestInit | undefined): Response {
+  const body = JSON.parse(String(init?.body)) as { questions: { type: string; name: string; levels?: { label: string }[] }[] };
+  return Response.json({
+    model: "gpt-6-luna",
+    answers: body.questions.map(question => question.type === "score" ? {
+      type: "score", name: question.name, score: 4, confidence: 0.98,
+      probabilities: question.levels!.map((level, index) => ({ label: level.label, value: index, probability: index === 4 ? 1 : 0 })),
+    } : { type: "predicate", name: question.name, probability: 0.9 }),
+    usage: { input_tokens: 1500, output_tokens: 0, total_tokens: 1500 },
+  });
+}
+
+function titleResponse(): Response {
+  return Response.json({
+    id: "resp_offline_d1_titles", object: "response", status: "completed", model: "gpt-6-luna",
+    output: [{ type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: JSON.stringify({ titles: ["霧の奥の入口", "森に残る静けさ", "向こう側の気配"] }) }] }],
+  });
+}
+
+test("D1 returns and atomically stores the score before delayed titles finish, then saves candidates without duplicating the photo", { timeout: 10_000 }, async () => {
+  const mode = process.env.ODDSHOT_SCORING_MODE;
+  const apiKey = process.env.OPENAI_API_KEY;
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-d1-title-key";
+  const ai = delayAiResponses();
+  const background: Promise<void>[] = [];
+  const input = { userId: "migrated-user", title: "", image: "", sampleKey: "forest", requestId: "d1-score-first-titles" };
+  try {
+    const pending = createPhoto(input, { scheduleBackground: work => { background.push(work); } });
+    const [scoreRequest] = await ai.bothStarted;
+    assert.deepEqual(ai.calls, { scores: 1, titles: 1 }, "both APIs start before either response is released");
+    ai.score.resolve(scoredResponse(scoreRequest));
+    const photo = await pending;
+    assert.equal(photo.evaluation.rank, "S");
+    assert.equal(photo.title, "名前のない一枚");
+    assert.deepEqual(photo.titleSuggestions, { suggestions: [], source: "pending" });
+    assert.equal(background.length, 1);
+    assert.deepEqual((await getPhoto(photo.id)).evaluation, photo.evaluation);
+    const counts = remote.prepare("SELECT (SELECT COUNT(*) FROM photos WHERE request_id = ?) AS photos, (SELECT COUNT(*) FROM evaluations WHERE photo_id = ?) AS evaluations").get(input.requestId, photo.id);
+    assert.deepEqual({ ...counts }, { photos: 1, evaluations: 1 }, "photo and score exist while the title API is still pending");
+    const save = batches.find(statements => statements.some(statement => statement.sql.startsWith("INSERT INTO photos") && statement.params.includes(input.requestId)));
+    assert.equal(save?.length, 2, "score-first persistence still uses one atomic photo/evaluation batch");
+    assert.deepEqual((await createPhoto(input, { scheduleBackground: work => { background.push(work); } })).titleSuggestions, photo.titleSuggestions);
+    assert.equal(background.length, 1, "an HTTP retry must reuse the ongoing title generation");
+    ai.titles.resolve(titleResponse());
+    await Promise.all(background);
+    const completed = await getPhoto(photo.id);
+    assert.equal(completed.title, "霧の奥の入口");
+    assert.deepEqual(completed.titleSuggestions, { source: "ai", suggestions: ["霧の奥の入口", "森に残る静けさ", "向こう側の気配"] });
+    assert.deepEqual(completed.evaluation, photo.evaluation);
+    assert.equal((await createPhoto(input)).id, photo.id);
+    assert.deepEqual(ai.calls, { scores: 1, titles: 1 });
+    assert.equal((remote.prepare("SELECT COUNT(*) AS count FROM photos WHERE request_id = ?").get(input.requestId) as { count: number }).count, 1);
+  } finally {
+    ai.titles.resolve(titleResponse());
+    await Promise.all(background);
+    globalThis.fetch = d1Fetch;
+    if (mode === undefined) delete process.env.ODDSHOT_SCORING_MODE; else process.env.ODDSHOT_SCORING_MODE = mode;
+    if (apiKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = apiKey;
+  }
+});
+
+test("D1 delayed automatic titles preserve an intervening manual edit, including the temporary title text", { timeout: 10_000 }, async () => {
+  const mode = process.env.ODDSHOT_SCORING_MODE;
+  const apiKey = process.env.OPENAI_API_KEY;
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-d1-title-key";
+  const ai = delayAiResponses();
+  const background: Promise<void>[] = [];
+  const input = { userId: "migrated-user", title: "", image: "", sampleKey: "forest", requestId: "d1-manual-title-in-flight" };
+  try {
+    const pending = createPhoto(input, { scheduleBackground: work => { background.push(work); } });
+    const [scoreRequest] = await ai.bothStarted;
+    ai.score.resolve(scoredResponse(scoreRequest));
+    const photo = await pending;
+    await updatePhotoTitle(photo.id, input.userId, "手入力で決めたタイトル");
+    // Choosing the same text as the temporary title still counts as a manual decision.
+    const edited = await updatePhotoTitle(photo.id, input.userId, "名前のない一枚");
+    assert.equal(edited.titleSuggestions?.source, "pending");
+    ai.titles.resolve(titleResponse());
+    await Promise.all(background);
+    const completed = await getPhoto(photo.id);
+    assert.equal(completed.title, edited.title, "a late AI response cannot overwrite a user edit");
+    assert.deepEqual(completed.titleSuggestions, { source: "ai", suggestions: ["霧の奥の入口", "森に残る静けさ", "向こう側の気配"] });
+    assert.deepEqual(completed.evaluation, photo.evaluation);
+    assert.deepEqual(ai.calls, { scores: 1, titles: 1 });
+    const counts = remote.prepare("SELECT (SELECT COUNT(*) FROM photos WHERE request_id = ?) AS photos, (SELECT COUNT(*) FROM evaluations WHERE photo_id = ?) AS evaluations").get(input.requestId, photo.id);
+    assert.deepEqual({ ...counts }, { photos: 1, evaluations: 1 });
+  } finally {
+    ai.titles.resolve(titleResponse());
+    await Promise.all(background);
+    globalThis.fetch = d1Fetch;
+    if (mode === undefined) delete process.env.ODDSHOT_SCORING_MODE; else process.env.ODDSHOT_SCORING_MODE = mode;
+    if (apiKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = apiKey;
+  }
 });

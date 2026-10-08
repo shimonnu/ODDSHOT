@@ -26,15 +26,20 @@ type PhotoRow = {
 };
 
 type ProfileRow = { id: string; nickname: string; color: string; created_at: string };
+type PendingTitleSuggestions = TitleSuggestions & { generationId: string; autoApply: boolean };
+export type CreatePhotoOptions = { scheduleBackground?: (work: Promise<void>) => void };
 
 const globalDatabase = globalThis as typeof globalThis & {
   oddshotDatabase?: DatabaseSync;
   oddshotSchemaVersion?: string;
   oddshotInFlight?: Map<string, { fingerprint: string; promise: Promise<Photo> }>;
   oddshotTitlesInFlight?: Map<string, Promise<Photo>>;
+  oddshotAutomaticTitlesInFlight?: Map<string, Promise<void>>;
 };
 const maxImageBytes = 1.5 * 1024 * 1024;
 const profileColors = ["#D4E97D", "#B1C7ED", "#EABFA5", "#D0BDE7", "#F0D57B"];
+const untitledPhoto = "名前のない一枚";
+const automaticTitleWindowMs = 2 * 60_000;
 
 export function driveMode(): "demo" | "google" {
   const mode = process.env.ODDSHOT_DRIVE_MODE ?? "demo";
@@ -51,7 +56,7 @@ function photoFromRow(row: PhotoRow): Photo {
     id: row.id,
     userId: row.user_id,
     title: row.title,
-    ...(row.title_suggestions_json ? { titleSuggestions: JSON.parse(row.title_suggestions_json) as TitleSuggestions } : {}),
+    ...(row.title_suggestions_json ? { titleSuggestions: pendingTitlesExpired(row) ? { suggestions: [], source: "unavailable" } : publicTitleSuggestions(row.title_suggestions_json) } : {}),
     image: `/api/photos/${row.id}/image`,
     createdAt: row.created_at,
     evaluation: { ...(JSON.parse(row.evaluation_json) as Evaluation), criteriaVersion: row.criteria_version },
@@ -59,6 +64,17 @@ function photoFromRow(row: PhotoRow): Photo {
     ...(row.sync_updated_at ? { syncUpdatedAt: row.sync_updated_at } : {}),
     isSample: row.sample_key !== null,
   };
+}
+
+function publicTitleSuggestions(value: string): TitleSuggestions {
+  const stored = JSON.parse(value) as TitleSuggestions;
+  return { suggestions: stored.suggestions, source: stored.source };
+}
+
+function pendingTitlesExpired(row: Pick<PhotoRow, "title_suggestions_json" | "created_at">): boolean {
+  return Boolean(row.title_suggestions_json
+    && publicTitleSuggestions(row.title_suggestions_json).source === "pending"
+    && Date.now() - Date.parse(row.created_at) >= automaticTitleWindowMs);
 }
 
 function sampleFile(key: SampleKey): string {
@@ -249,7 +265,7 @@ async function completedRequest(database: Storage, requestId: string, fingerprin
   return photoFromRow(row);
 }
 
-export async function createPhoto(input: PhotoInput): Promise<Photo> {
+export async function createPhoto(input: PhotoInput, options: CreatePhotoOptions = {}): Promise<Photo> {
   if (!input || typeof input !== "object") throw new ApiError("写真の情報を確認してください。");
   const database = storage();
   if (typeof input.userId !== "string" || !await database.get("SELECT id FROM profiles WHERE id = ?", [input.userId])) throw new ApiError("先にニックネームを選んでください。");
@@ -280,16 +296,23 @@ export async function createPhoto(input: PhotoInput): Promise<Photo> {
   const config = getScoringConfig();
   const operation = (async (): Promise<Photo> => {
     const criteria = await scoringCriteria(database);
-    const [result, titleSuggestions] = await Promise.all([
-      config.mode === "decisions"
-        ? scoreImage(bytes, mime, criteria, createdAt)
-        : Promise.resolve(demoEvaluation(bytes, key, createdAt, undefined, criteria)),
-      inputTitle ? Promise.resolve(undefined) : safeTitleSuggestions(bytes, mime, key),
-    ]);
-    const title = inputTitle || titleSuggestions?.suggestions[0] || "名前のない一枚";
+    let completedTitles: TitleSuggestions | undefined;
+    // Both API requests start together, but the HTTP route only waits for the score.
+    const titleOperation = inputTitle ? undefined : safeTitleSuggestions(bytes, mime, key).then(value => {
+      completedTitles = value;
+      return value;
+    });
+    const result = await (config.mode === "decisions"
+      ? scoreImage(bytes, mime, criteria, createdAt)
+      : Promise.resolve(demoEvaluation(bytes, key, createdAt, undefined, criteria)));
+    const pendingTitles: PendingTitleSuggestions = { suggestions: [], source: "pending", generationId: id, autoApply: true };
+    const titleSuggestions = titleOperation
+      ? options.scheduleBackground ? completedTitles ?? pendingTitles : await titleOperation
+      : undefined;
+    const title = inputTitle || titleSuggestions?.suggestions[0] || untitledPhoto;
     const evaluation: Evaluation = { ...result, criteriaVersion: criteria.version };
     // Both writes are one batch; a competing requestId cannot create an orphan evaluation.
-    await database.batch([
+    const writes = await database.batch([
       {
         sql: "INSERT INTO photos (id, user_id, title, image_bytes, mime_type, sample_key, created_at, sync_status, request_id, request_fingerprint, title_suggestions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING",
         params: [id, userId, title, bytes, mime, key ?? null, createdAt, "pending", requestId ?? null, requestId ? fingerprint : null, titleSuggestions ? JSON.stringify(titleSuggestions) : null], mode: "run",
@@ -300,16 +323,23 @@ export async function createPhoto(input: PhotoInput): Promise<Photo> {
       },
       ...(driveMode() === "google" ? [enqueueStatement(id, createdAt, false)] : []),
     ]);
-    if (requestId) {
-      const saved = await completedRequest(database, requestId, fingerprint);
-      if (!saved) throw new StorageError("写真の保存を確認できませんでした。もう一度お試しください。", 503, "query");
-      return saved;
-    }
-    return {
+    const saved = requestId ? await completedRequest(database, requestId, fingerprint) : {
       id, userId, title, image: `/api/photos/${id}/image`, createdAt,
-      ...(titleSuggestions ? { titleSuggestions } : {}),
+      ...(titleSuggestions ? { titleSuggestions: { source: titleSuggestions.source, suggestions: titleSuggestions.suggestions } } : {}),
       evaluation, syncStatus: "pending", isSample: Boolean(key),
-    };
+    } satisfies Photo;
+    if (!saved) throw new StorageError("写真の保存を確認できませんでした。もう一度お試しください。", 503, "query");
+    // A requestId loser must never replace the winning request's title candidates.
+    if (writes[0].meta.changes === 1 && titleSuggestions?.source === "pending" && titleOperation && options.scheduleBackground) {
+      const work = completeAutomaticPhotoTitles(database, id, titleOperation).finally(() => {
+        if (globalDatabase.oddshotAutomaticTitlesInFlight?.get(id) === work) globalDatabase.oddshotAutomaticTitlesInFlight.delete(id);
+      });
+      globalDatabase.oddshotAutomaticTitlesInFlight ??= new Map();
+      globalDatabase.oddshotAutomaticTitlesInFlight.set(id, work);
+      try { options.scheduleBackground(work); }
+      catch { await work; }
+    }
+    return saved;
   })();
   if (requestId) {
     globalDatabase.oddshotInFlight ??= new Map();
@@ -320,6 +350,37 @@ export async function createPhoto(input: PhotoInput): Promise<Photo> {
   } finally {
     if (requestId && globalDatabase.oddshotInFlight?.get(requestId)?.promise === operation) globalDatabase.oddshotInFlight.delete(requestId);
   }
+}
+
+async function completeAutomaticPhotoTitles(database: Storage, id: string, titles: Promise<TitleSuggestions>): Promise<void> {
+  try {
+    const result = await titles;
+    const suggestion = result.suggestions[0];
+    const now = new Date().toISOString();
+    const titleMayChange = `id = ? AND title = ? AND title <> ? AND json_extract(title_suggestions_json, '$.source') = 'pending' AND json_extract(title_suggestions_json, '$.generationId') = ? AND json_extract(title_suggestions_json, '$.autoApply') = 1`;
+    await database.batch([
+      ...(suggestion && driveMode() === "google" ? [{
+        sql: `INSERT INTO drive_sync_jobs (photo_id, status, next_attempt_at, updated_at) SELECT ?, 'queued', ?, ? WHERE EXISTS (SELECT 1 FROM photos WHERE ${titleMayChange}) ON CONFLICT(photo_id) DO UPDATE SET requested_revision = drive_sync_jobs.requested_revision + 1, status = CASE WHEN drive_sync_jobs.status = 'processing' THEN 'processing' ELSE 'queued' END, attempt_count = CASE WHEN drive_sync_jobs.status = 'processing' THEN drive_sync_jobs.attempt_count ELSE 0 END, next_attempt_at = excluded.next_attempt_at, last_error = NULL, updated_at = excluded.updated_at`,
+        params: [id, now, now, id, untitledPhoto, suggestion, id], mode: "run" as const,
+      }] : []),
+      {
+        sql: `UPDATE photos SET title = CASE WHEN title = ? AND json_extract(title_suggestions_json, '$.autoApply') = 1 THEN ? ELSE title END, title_suggestions_json = ? WHERE id = ? AND json_extract(title_suggestions_json, '$.source') = 'pending' AND json_extract(title_suggestions_json, '$.generationId') = ?`,
+        params: [untitledPhoto, suggestion ?? untitledPhoto, JSON.stringify(result), id, id], mode: "run",
+      },
+    ]);
+  } catch {
+    // A background storage failure must never become an unhandled rejection or erase the score.
+    console.error(JSON.stringify({ event: "oddshot_automatic_title_save_failed" }));
+    try {
+      await database.run("UPDATE photos SET title_suggestions_json = ? WHERE id = ? AND json_extract(title_suggestions_json, '$.source') = 'pending' AND json_extract(title_suggestions_json, '$.generationId') = ?", [JSON.stringify({ suggestions: [], source: "unavailable" }), id, id]);
+    } catch { console.error(JSON.stringify({ event: "oddshot_automatic_title_failure_save_failed" })); }
+  }
+}
+
+export async function getPhoto(id: string): Promise<Photo> {
+  const row = await storage().get<PhotoRow>(`${photoSelect()} WHERE p.id = ?`, [id]);
+  if (!row) throw new ApiError("写真が見つかりませんでした。", 404);
+  return photoFromRow(row);
 }
 
 async function safeTitleSuggestions(bytes: Buffer, mime: string, sampleKey?: string): Promise<TitleSuggestions> {
@@ -345,7 +406,7 @@ export async function updatePhotoTitle(id: string, userId: unknown, title: unkno
   const row = await ownedPhoto(database, id, userId);
   const clean = title.trim();
   const results = await database.batch([
-    { sql: "UPDATE photos SET title = ? WHERE id = ? AND user_id = ?", params: [clean, id, row.user_id], mode: "run" },
+    { sql: "UPDATE photos SET title = ?, title_suggestions_json = CASE WHEN json_extract(title_suggestions_json, '$.source') = 'pending' THEN json_set(title_suggestions_json, '$.autoApply', 0) ELSE title_suggestions_json END WHERE id = ? AND user_id = ?", params: [clean, id, row.user_id], mode: "run" },
     ...(driveMode() === "google" ? [enqueueStatement(id, new Date().toISOString(), true)] : []),
     { sql: `${photoSelect()} WHERE p.id = ?`, params: [id], mode: "get" },
   ]);
@@ -355,6 +416,18 @@ export async function updatePhotoTitle(id: string, userId: unknown, title: unkno
 export async function generatePhotoTitles(id: string, userId: unknown): Promise<Photo> {
   const database = storage();
   const row = await ownedPhoto(database, id, userId);
+  const expired = pendingTitlesExpired(row);
+  const pending = row.title_suggestions_json && publicTitleSuggestions(row.title_suggestions_json).source === "pending";
+  const automatic = globalDatabase.oddshotAutomaticTitlesInFlight?.get(id);
+  if (automatic && pending && !expired) {
+    await automatic;
+    return photoFromRow(await ownedPhoto(database, id, userId));
+  }
+  if (pending && !expired) throw new ApiError("タイトル案を作成中です。少し待ってから確認してください。", 409);
+  if (expired) {
+    // Invalidate the old generation before retrying, so a late completion cannot replace new candidates.
+    await database.run("UPDATE photos SET title_suggestions_json = ? WHERE id = ? AND json_extract(title_suggestions_json, '$.source') = 'pending' AND json_extract(title_suggestions_json, '$.generationId') = ?", [JSON.stringify({ suggestions: [], source: "unavailable" }), id, id]);
+  }
   const running = globalDatabase.oddshotTitlesInFlight?.get(id);
   if (running) return running;
   const operation = (async (): Promise<Photo> => {

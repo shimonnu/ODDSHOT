@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawnSync } from "node:child_process";
-import { ApiError, createPhoto, createProfile, generatePhotoTitles, getState, updatePhotoTitle } from "../lib/db";
+import { ApiError, createPhoto, createProfile, generatePhotoTitles, getPhoto, getState, updatePhotoTitle } from "../lib/db";
 
 const originalDirectory = process.cwd();
 const fixture = mkdtempSync(path.join(tmpdir(), "oddshot-db-fixture-"));
@@ -280,4 +280,219 @@ test("regeneration failure preserves existing title candidates and allows retry"
   assert.equal(retried.titleSuggestions?.suggestions[0], "再取得したタイトル");
   process.env.ODDSHOT_SCORING_MODE = "demo";
   delete process.env.OPENAI_API_KEY;
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function beforeTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("scoring waited for the unresolved title API")), 1000); });
+  try { return await Promise.race([promise, deadline]); }
+  finally { clearTimeout(timeout!); }
+}
+
+test("score-first response persists and deduplicates while the title API is still pending", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("採点先着の検証");
+  const before = (await getState()).photos.length;
+  const titles = deferred<Response>();
+  const tasks: Promise<void>[] = [];
+  const urls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    urls.push(String(url));
+    return String(url).endsWith("/decisions") ? scoredResponse(init) : titles.promise;
+  };
+  const input = { userId: profile.id, title: "", image: "", sampleKey: "forest", requestId: "score-before-slow-title" };
+  const options = { scheduleBackground: (work: Promise<void>) => { tasks.push(work); } };
+  try {
+    const [first, duplicate] = await beforeTimeout(Promise.all([createPhoto(input, options), createPhoto(input, options)]));
+    assert.equal(first.id, duplicate.id);
+    assert.deepEqual(first.titleSuggestions, { source: "pending", suggestions: [] });
+    assert.equal(first.evaluation.rank, "S");
+    assert.equal(urls.filter(url => url.endsWith("/decisions")).length, 1);
+    assert.equal(urls.filter(url => url.endsWith("/responses")).length, 1, "both APIs start before the score response");
+    assert.equal(tasks.length, 1, "the request owns one registered completion task");
+    assert.equal((await createPhoto(input, options)).id, first.id);
+    assert.equal(urls.length, 2, "a retry with pending suggestions must not call either API again");
+    assert.equal((await getState()).photos.length, before + 1);
+    assert.equal((await getState()).ranking.find(entry => entry.id === profile.id)?.highCount, 1);
+    titles.resolve(titleResponse(["先に見つけた光", "森の記憶", "光の向こう側"]));
+    await Promise.all(tasks);
+    const updated = await getPhoto(first.id);
+    assert.equal(updated.title, "先に見つけた光");
+    assert.deepEqual(updated.titleSuggestions, { source: "ai", suggestions: ["先に見つけた光", "森の記憶", "光の向こう側"] });
+    assert.deepEqual(updated.evaluation, first.evaluation);
+    assert.equal((await createPhoto(input, options)).title, updated.title);
+    assert.equal(urls.length, 2);
+  } finally {
+    titles.resolve(titleResponse(["後から届く案", "別の案", "三つ目の案"]));
+    await Promise.allSettled(tasks);
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("title-first completion is included with the score without another title request", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("タイトル先着の検証");
+  const score = deferred<Response>();
+  const bothStarted = deferred<void>();
+  const tasks: Promise<void>[] = [];
+  let calls = 0;
+  let scoreResponse!: Response;
+  globalThis.fetch = async (url, init) => {
+    calls++;
+    if (calls === 2) bothStarted.resolve();
+    if (String(url).endsWith("/decisions")) { scoreResponse = scoredResponse(init); return score.promise; }
+    return titleResponse(["星の入口", "夜空の余韻", "宇宙からの気配"]);
+  };
+  const creating = createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "sky", requestId: "title-before-slow-score" }, { scheduleBackground: work => { tasks.push(work); } });
+  try {
+    await beforeTimeout(bothStarted.promise);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    score.resolve(scoreResponse);
+    const photo = await beforeTimeout(creating);
+    assert.equal(photo.title, "星の入口");
+    assert.equal(photo.titleSuggestions?.source, "ai");
+    assert.equal(photo.evaluation.rank, "S");
+    await Promise.all(tasks);
+    assert.equal(calls, 2);
+    assert.equal((await getPhoto(photo.id)).title, photo.title);
+  } finally {
+    score.resolve(scoreResponse);
+    await Promise.allSettled([creating, ...tasks]);
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("a late title failure finishes pending state without losing the successful score", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("後追いタイトル失敗の検証");
+  const titles = deferred<Response>();
+  const tasks: Promise<void>[] = [];
+  let calls = 0;
+  globalThis.fetch = async (url, init) => {
+    calls++;
+    return String(url).endsWith("/decisions") ? scoredResponse(init) : titles.promise;
+  };
+  try {
+    const photo = await beforeTimeout(createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "sky", requestId: "score-first-title-fails" }, { scheduleBackground: work => { tasks.push(work); } }));
+    assert.equal(photo.titleSuggestions?.source, "pending");
+    titles.resolve(Response.json({ error: { message: "offline title failure" } }, { status: 429 }));
+    await Promise.all(tasks);
+    const updated = await getPhoto(photo.id);
+    assert.deepEqual(updated.titleSuggestions, { source: "unavailable", suggestions: [] });
+    assert.equal(updated.title, photo.title);
+    assert.deepEqual(updated.evaluation, photo.evaluation);
+    assert.equal((await getState()).ranking.find(entry => entry.id === profile.id)?.highCount, 1);
+    assert.equal(calls, 2);
+  } finally {
+    titles.resolve(Response.json({}, { status: 429 }));
+    await Promise.allSettled(tasks);
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("late automatic suggestions preserve explicit title edits including the original placeholder", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("後追い手編集の検証");
+  try {
+    for (const [index, manualTitle] of ["手入力した光の記録", "名前のない一枚"].entries()) {
+      const titles = deferred<Response>();
+      const tasks: Promise<void>[] = [];
+      let calls = 0;
+      globalThis.fetch = async (url, init) => {
+        calls++;
+        return String(url).endsWith("/decisions") ? scoredResponse(init) : titles.promise;
+      };
+      try {
+        const photo = await beforeTimeout(createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "forest", requestId: "late-manual-title-" + index }, { scheduleBackground: work => { tasks.push(work); } }));
+        await updatePhotoTitle(photo.id, profile.id, manualTitle);
+        titles.resolve(titleResponse(["自動で届いた候補", "二つ目の光", "三つ目の気配"]));
+        await Promise.all(tasks);
+        const updated = await getPhoto(photo.id);
+        assert.equal(updated.title, manualTitle);
+        assert.deepEqual(updated.titleSuggestions, { source: "ai", suggestions: ["自動で届いた候補", "二つ目の光", "三つ目の気配"] });
+        assert.deepEqual(updated.evaluation, photo.evaluation);
+        assert.equal(calls, 2);
+      } finally {
+        titles.resolve(Response.json({}, { status: 429 }));
+        await Promise.allSettled(tasks);
+      }
+    }
+  } finally {
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("score failure never saves a pending photo or schedules a late title write", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("採点失敗の後追い検証");
+  const before = (await getState()).photos.length;
+  const titles = deferred<Response>();
+  const tasks: Promise<void>[] = [];
+  globalThis.fetch = async url => String(url).endsWith("/decisions") ? Response.json({}, { status: 503 }) : titles.promise;
+  try {
+    await assert.rejects(beforeTimeout(createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "forest", requestId: "failed-score-no-background" }, { scheduleBackground: work => { tasks.push(work); } })));
+    titles.resolve(titleResponse(["保存されない候補", "保存されない別案", "保存されない三案目"]));
+    await Promise.all(tasks);
+    assert.equal(tasks.length, 0);
+    assert.equal((await getState()).photos.length, before);
+  } finally {
+    titles.resolve(Response.json({}, { status: 429 }));
+    await Promise.allSettled(tasks);
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("an abandoned title task can be retried without allowing its late result to overwrite the retry", async () => {
+  process.env.ODDSHOT_SCORING_MODE = "decisions";
+  process.env.OPENAI_API_KEY = "offline-test-key";
+  const profile = await createProfile("候補待機からの復旧検証");
+  const abandoned = deferred<Response>();
+  const tasks: Promise<void>[] = [];
+  let titleCalls = 0;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith("/decisions")) return scoredResponse(init);
+    titleCalls++;
+    return titleCalls === 1 ? abandoned.promise : titleResponse(["再取得で届いた候補", "再取得の光", "再取得の森"]);
+  };
+  try {
+    const photo = await beforeTimeout(createPhoto({ userId: profile.id, title: "", image: "", sampleKey: "forest", requestId: "abandoned-title-task-retry" }, { scheduleBackground: work => { tasks.push(work); } }));
+    await updatePhotoTitle(photo.id, profile.id, "候補を待ちながら付けた名前");
+    const database = (globalThis as { oddshotDatabase?: DatabaseSync }).oddshotDatabase!;
+    database.prepare("UPDATE photos SET created_at = ? WHERE id = ?").run(new Date(Date.now() - 120_001).toISOString(), photo.id);
+    assert.equal((await getPhoto(photo.id)).titleSuggestions?.source, "unavailable");
+    assert.equal((await getState()).photos.find(item => item.id === photo.id)?.titleSuggestions?.source, "unavailable");
+    const stored = database.prepare("SELECT title_suggestions_json FROM photos WHERE id = ?").get(photo.id) as { title_suggestions_json: string };
+    assert.equal(JSON.parse(stored.title_suggestions_json).source, "pending", "GET does not mutate the stored task");
+    const retried = await beforeTimeout(generatePhotoTitles(photo.id, profile.id));
+    assert.equal(retried.title, "候補を待ちながら付けた名前");
+    assert.equal(retried.titleSuggestions?.suggestions[0], "再取得で届いた候補");
+    abandoned.resolve(titleResponse(["古い処理から遅れて届いた案", "古い別案", "古い三案目"]));
+    await Promise.all(tasks);
+    const final = await getPhoto(photo.id);
+    assert.equal(final.title, retried.title);
+    assert.deepEqual(final.titleSuggestions, retried.titleSuggestions);
+    assert.deepEqual(final.evaluation, photo.evaluation);
+    assert.equal(titleCalls, 2);
+  } finally {
+    abandoned.resolve(Response.json({}, { status: 429 }));
+    await Promise.allSettled(tasks);
+    process.env.ODDSHOT_SCORING_MODE = "demo";
+    delete process.env.OPENAI_API_KEY;
+  }
 });

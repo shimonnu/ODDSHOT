@@ -30,7 +30,7 @@ function rememberProfile(id: string | null) { try { if (id) sessionStorage.setIt
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...options?.headers } }); }
-  catch { throw new Error("接続できませんでした。もう一度お試しください。"); }
+  catch (error) { if (options?.signal?.aborted) throw error; throw new Error("接続できませんでした。もう一度お試しください。"); }
   const body = await response.json().catch(() => { throw new Error("応答を受け取れませんでした。少し待ってから、もう一度お試しください。"); });
   if (!response.ok) throw new Error(body.error || "処理に失敗しました。もう一度お試しください。");
   return body;
@@ -150,20 +150,26 @@ function PhotoTitleEditor({ photo, userId, isLive, onUpdate, onSaved }: { photo:
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState("");
   const busy = useRef(false);
-  useEffect(() => { setDraft(photo.title); setError(""); }, [photo.id, photo.title]);
+  const previousTitle = useRef(photo.title);
+  useEffect(() => {
+    const previous = previousTitle.current;
+    previousTitle.current = photo.title;
+    setDraft(current => current === previous ? photo.title : current);
+  }, [photo.title]);
   const candidates = photo.titleSuggestions;
+  const titlePending = candidates?.source === "pending";
   const hasCandidates = !!candidates?.suggestions.length && candidates.source !== "unavailable";
   async function save(event: FormEvent) {
     event.preventDefault();
     if (busy.current) return;
     if (!draft.trim()) { setError("タイトルを入力してください。"); return; }
     busy.current = true; setSaving(true); setError("");
-    try { const changed = await request<Photo>(`/api/photos/${photo.id}/title`, { method: "PATCH", body: JSON.stringify({ userId, title: draft.trim() }) }); onUpdate(changed); onSaved(); }
+    try { const changed = await request<Photo>(`/api/photos/${photo.id}/title`, { method: "PATCH", body: JSON.stringify({ userId, title: draft.trim() }) }); setDraft(changed.title); onUpdate(changed); onSaved(); }
     catch (e) { setError((e as Error).message); }
     finally { busy.current = false; setSaving(false); }
   }
   async function suggest() {
-    if (busy.current) return;
+    if (busy.current || titlePending) return;
     busy.current = true; setSuggesting(true); setError("");
     try {
       const changed = await request<Photo>(`/api/photos/${photo.id}/titles`, { method: "POST", body: JSON.stringify({ userId }) });
@@ -173,7 +179,8 @@ function PhotoTitleEditor({ photo, userId, isLive, onUpdate, onSaved }: { photo:
     finally { busy.current = false; setSuggesting(false); }
   }
   return <section className="photo-title-editor" aria-labelledby={`${fieldId}-heading`}><div className="title-editor-heading"><div><span className="section-label">NAME YOUR DISCOVERY</span><h2 id={`${fieldId}-heading`}>この一枚に、名前を。</h2></div><Sparkles size={22} strokeWidth={1.4} aria-hidden="true" /></div>
-    {hasCandidates ? <><div className="title-suggestion-source"><span className={`evaluation-badge ${candidates.source === "ai" ? "live" : ""}`}>{candidates.source === "ai" ? "画像から AI が提案" : "デモのタイトル候補"}</span><span>選んだ案は、そのまま編集できます</span></div><div className="title-suggestion-chips">{candidates.suggestions.map(candidate => <button key={candidate} type="button" aria-pressed={draft === candidate} className={draft === candidate ? "selected" : ""} disabled={saving || suggesting} onClick={() => { setDraft(candidate); setError(""); }}>{candidate}{draft === candidate && <Check size={14} aria-hidden="true" />}</button>)}</div><button className="text-link title-regenerate" type="button" disabled={saving || suggesting} onClick={() => void suggest()}>{suggesting ? <><LoaderCircle size={15} className="spin" aria-hidden="true" />タイトル候補を考えています</> : <><RefreshCw size={14} aria-hidden="true" />{error ? "タイトル提案を再試行" : "別のタイトル案を提案"}</>}</button></> : <div className="title-suggestion-empty"><p>{candidates?.source === "unavailable" ? "タイトルの提案を取得できませんでした。写真と採点は保存済みです。" : "この写真から、タイトルの候補を提案できます。"}</p><button className="text-link" onClick={() => void suggest()} disabled={saving || suggesting}>{suggesting ? <><LoaderCircle size={16} className="spin" aria-hidden="true" />タイトル候補を考えています</> : <><Sparkles size={16} aria-hidden="true" />{candidates?.source === "unavailable" || error ? "タイトル提案を再試行" : "画像からタイトルを提案"}<ArrowUpRight size={15} aria-hidden="true" /></>}</button></div>}
+    <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{titlePending ? "タイトルを考えています。採点は完了しました。" : hasCandidates ? "タイトル候補を受け取りました。" : candidates?.source === "unavailable" ? "タイトル候補を取得できませんでした。写真と採点は保存済みです。" : ""}</p>
+    {titlePending ? <div className="title-suggestion-pending"><LoaderCircle size={19} className="spin" aria-hidden="true" /><div><p>タイトルを考えています…</p><span>採点は完了しました。待っている間も自由に編集できます。</span></div></div> : hasCandidates ? <><div className="title-suggestion-source"><span className={`evaluation-badge ${candidates.source === "ai" ? "live" : ""}`}>{candidates.source === "ai" ? "画像から AI が提案" : "デモのタイトル候補"}</span><span>選んだ案は、そのまま編集できます</span></div><div className="title-suggestion-chips">{candidates.suggestions.map(candidate => <button key={candidate} type="button" aria-pressed={draft === candidate} className={draft === candidate ? "selected" : ""} disabled={saving || suggesting} onClick={() => { setDraft(candidate); setError(""); }}>{candidate}{draft === candidate && <Check size={14} aria-hidden="true" />}</button>)}</div><button className="text-link title-regenerate" type="button" disabled={saving || suggesting} onClick={() => void suggest()}>{suggesting ? <><LoaderCircle size={15} className="spin" aria-hidden="true" />タイトル候補を考えています</> : <><RefreshCw size={14} aria-hidden="true" />{error ? "タイトル提案を再試行" : "別のタイトル案を提案"}</>}</button></> : <div className="title-suggestion-empty"><p>{candidates?.source === "unavailable" ? "タイトルの提案を取得できませんでした。写真と採点は保存済みです。" : "この写真から、タイトルの候補を提案できます。"}</p><button className="text-link" onClick={() => void suggest()} disabled={saving || suggesting}>{suggesting ? <><LoaderCircle size={16} className="spin" aria-hidden="true" />タイトル候補を考えています</> : <><Sparkles size={16} aria-hidden="true" />{candidates?.source === "unavailable" || error ? "タイトル提案を再試行" : "画像からタイトルを提案"}<ArrowUpRight size={15} aria-hidden="true" /></>}</button></div>}
     <form onSubmit={save}><label htmlFor={fieldId}>タイトルを編集</label><div className="title-editor-input"><input id={fieldId} value={draft} onChange={e => setDraft(e.target.value)} maxLength={60} disabled={saving || suggesting} required aria-describedby={`${fieldId}-error`} /><button className="button primary" disabled={saving || suggesting || draft.trim() === photo.title}>{saving ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <><Check size={17} aria-hidden="true" />保存する</>}</button></div><p className="form-error" id={`${fieldId}-error`} role="alert">{error}</p></form>
     <p className="title-editor-note">タイトルの変更で、点数やランキングは変わりません。{isLive && <span>AI に候補を再提案させる場合は、AI 利用料がかかります。</span>}</p>
   </section>;
@@ -205,9 +212,13 @@ export default function Home() {
   const evaluationBusy = useRef(false);
   const fileBusy = useRef(false);
   const syncTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const stateRevision = useRef(0);
+  const refreshSequence = useRef(0);
+  const mounted = useRef(true);
   const profile = state.profiles.find(p => p.id === userId);
   const ownPhotos = state.photos.filter(p => p.userId === userId);
   const selectedPhoto = state.photos.find(p => p.id === photoId);
+  const pendingTitleId = view === "result" && selectedPhoto?.titleSuggestions?.source === "pending" ? selectedPhoto.id : null;
   const ownRank = state.ranking.find(p => p.id === userId);
   const isLive = state.ai?.mode === "decisions";
   const aiReady = !isLive || state.ai?.ready === true;
@@ -215,10 +226,25 @@ export default function Home() {
   const driveConnected = isGoogleDrive && state.drive?.connected === true;
   const driveNote = isGoogleDrive ? driveConnected ? "写真と評価を保存後、共通の Google Drive へ自動同期します。" : "写真と評価は保存済みです。管理者が Google Drive を連携すると、順に自動同期します。" : "写真と評価は保存済みです。Google Drive への同期はデモです。";
 
-  const refresh = useCallback(async () => {
-    const data = await request<AppState>("/api/state");
-    setState(data);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const revision = stateRevision.current;
+    const sequence = ++refreshSequence.current;
+    const data = await request<AppState>("/api/state", { signal, cache: "no-store" });
+    if (mounted.current && !signal?.aborted && revision === stateRevision.current && sequence === refreshSequence.current) {
+      stateRevision.current += 1;
+      setState(data);
+    }
     return data;
+  }, []);
+
+  const updatePhoto = useCallback((photo: Photo) => {
+    stateRevision.current += 1;
+    setState(previous => ({ ...previous, photos: previous.photos.map(existing => existing.id === photo.id ? photo : existing) }));
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
 
   const navigate = useCallback((next: View, id?: string, push = true) => {
@@ -246,12 +272,56 @@ export default function Home() {
   }, [navigate, refresh]);
 
   useEffect(() => {
-    if (!loaded || processing) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") refresh().catch(e => setGlobalError(e.message));
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [loaded, processing, refresh]);
+    if (!loaded || processing || pendingTitleId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    async function poll() {
+      if (cancelled || document.visibilityState !== "visible") return;
+      controller = new AbortController();
+      try { await refresh(controller.signal); }
+      catch (error) { if (!cancelled && !controller.signal.aborted) setGlobalError((error as Error).message); }
+      finally { controller = undefined; if (!cancelled && document.visibilityState === "visible") timer = setTimeout(poll, 5000); }
+    }
+    function visibilityChanged() {
+      clearTimeout(timer);
+      controller?.abort();
+      if (document.visibilityState === "visible" && !controller) void poll();
+    }
+    if (document.visibilityState === "visible") timer = setTimeout(poll, 5000);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => { cancelled = true; clearTimeout(timer); controller?.abort(); document.removeEventListener("visibilitychange", visibilityChanged); };
+  }, [loaded, processing, pendingTitleId, refresh]);
+
+  useEffect(() => {
+    if (!loaded || processing || !pendingTitleId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    let failures = 0;
+    async function poll() {
+      if (cancelled || document.visibilityState !== "visible") return;
+      const revision = stateRevision.current;
+      controller = new AbortController();
+      try {
+        const photo = await request<Photo>(`/api/photos/${pendingTitleId}`, { signal: controller.signal, cache: "no-store" });
+        if (!cancelled && !controller.signal.aborted && revision === stateRevision.current) updatePhoto(photo);
+        failures = 0;
+      } catch { if (!cancelled && !controller.signal.aborted) failures += 1; }
+      finally {
+        controller = undefined;
+        if (!cancelled && document.visibilityState === "visible") timer = setTimeout(poll, Math.min(1500 * 2 ** failures, 10000));
+      }
+    }
+    function visibilityChanged() {
+      clearTimeout(timer);
+      controller?.abort();
+      if (document.visibilityState === "visible" && !controller) void poll();
+    }
+    if (document.visibilityState === "visible") timer = setTimeout(poll, 1500);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => { cancelled = true; clearTimeout(timer); controller?.abort(); document.removeEventListener("visibilitychange", visibilityChanged); };
+  }, [loaded, processing, pendingTitleId, updatePhoto]);
 
   useEffect(() => {
     if (!toast) return;
@@ -264,12 +334,12 @@ export default function Home() {
     const timer = setTimeout(async () => {
       try {
         const photo = await request<Photo>(`/api/photos/${id}/sync`, { method: "PATCH", body: JSON.stringify({ status: fail ? "failed" : "synced" }) });
-        setState(s => ({ ...s, photos: s.photos.map(p => p.id === id ? photo : p) }));
+        updatePhoto(photo);
       } catch (e) { setGlobalError((e as Error).message); }
       finally { syncTimers.current.delete(id); }
     }, 2500);
     syncTimers.current.set(id, timer);
-  }, [isGoogleDrive]);
+  }, [isGoogleDrive, updatePhoto]);
 
   useEffect(() => {
     if (isGoogleDrive) {
@@ -302,6 +372,7 @@ export default function Home() {
     setRegistering(true); setNameError("");
     try {
       const p = await request<Profile>("/api/profiles", { method: "POST", body: JSON.stringify({ nickname: name.trim() }) });
+      stateRevision.current += 1;
       setState(s => ({ ...s, profiles: [...s.profiles.filter(existing => existing.id !== p.id), p] }));
       await refresh().catch(() => setGlobalError("名前は保存済みです。ランキングの更新をもう一度お試しください。"));
       selectProfile(p);
@@ -323,14 +394,11 @@ export default function Home() {
     setCaptureProfiles(!profile); setNameError(""); setModal("capture");
   }
 
-  function updatePhoto(photo: Photo) {
-    setState(previous => ({ ...previous, photos: previous.photos.map(existing => existing.id === photo.id ? photo : existing) }));
-  }
-
   async function evaluate(image: string, sampleKey?: string, retry?: PendingPhoto) {
     if (evaluationBusy.current || !profile) return;
     if (!aiReady) { setUploadError("AI 採点の準備がまだ完了していません。管理者に設定を確認してもらってください。"); return; }
     evaluationBusy.current = true;
+    stateRevision.current += 1;
     const input = retry || { userId: profile.id, title: title.trim(), image, sampleKey, requestId: crypto.randomUUID() };
     setPendingPhoto(input);
     setProcessing(true); setUploadError(""); setPreview(image); setStep(0);
@@ -342,11 +410,12 @@ export default function Home() {
       const photo = await request<Photo>("/api/photos", { method: "POST", body: JSON.stringify(input) });
       setStep(2);
       setPendingPhoto(null);
+      stateRevision.current += 1;
       setState(s => ({ ...s, photos: [photo, ...s.photos.filter(existing => existing.id !== photo.id)] }));
-      await refresh().catch(() => setGlobalError("写真と評価は保存済みです。ランキングの更新をもう一度お試しください。"));
       scheduleSync(photo.id, simulateFailure);
       setTitle(""); setModal(null); navigate("result", photo.id);
       setToast(photo.evaluation.isDemo ? "写真とデモ採点を保存しました" : "写真と AI 採点を保存しました");
+      void refresh().catch(() => { if (mounted.current) setGlobalError("写真と評価は保存済みです。ランキングの更新をもう一度お試しください。"); });
     } catch (e) { setUploadError((e as Error).message); }
     finally { evaluationBusy.current = false; setProcessing(false); setStep(0); }
   }
@@ -376,7 +445,7 @@ export default function Home() {
     setRetryingPhotoId(photo.id);
     try {
       const changed = await request<Photo>(`/api/photos/${photo.id}/sync`, { method: "PATCH", body: JSON.stringify({ status: "pending" }) });
-      setState(s => ({ ...s, photos: s.photos.map(p => p.id === photo.id ? changed : p) }));
+      updatePhoto(changed);
       scheduleSync(photo.id, false);
       if (isGoogleDrive) setToast(driveConnected ? "Drive 同期を再試行します" : "Drive の連携後に同期します");
     } catch (e) { setGlobalError((e as Error).message); }

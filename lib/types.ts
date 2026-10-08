@@ -7,7 +7,7 @@ export type ScoringConfig = {
   model: "gpt-6-luna";
   ready: boolean;
 };
-export type TitleSuggestions = { suggestions: string[]; source: "ai" | "demo" | "unavailable" };
+export type TitleSuggestions = { suggestions: string[]; source: "ai" | "demo" | "pending" | "unavailable" };
 export type Evaluation = {
   id: string;
   score: number;
