@@ -139,6 +139,10 @@ Vercel 公開時は専用 Cloudflare Worker に `ODDSHOT_SYNC_CALLBACK_URL=https
 
 ## Vercel 公開時の設定
 
+この作業環境では Vercel の `harukishimos-projects/oddshot` プロジェクトを作成し、ローカルのアプリをリンクしています。GitHub のアカウント選択で取り込みが進まないため、CLI でローカルのソースを直接アップロードする方式を準備しました。現時点では環境変数の登録とアプリの公開はまだ行っていません。[プロジェクトの環境変数設定](https://vercel.com/harukishimos-projects/oddshot/settings/environment-variables)
+
+直接アップロードでは `.vercelignore` で秘密環境変数、DB、バックアップ、生成物を除外し、`vercel.json` で Next.js を指定します。Vercel プラグインからのプロジェクト設定変更は権限エラーのため反映されていませんが、フレームワークは公開設定ファイルで指定しています。GitHub からの自動デプロイは未接続です。CLI からの公開時にもコミット作者の本人確認が求められる場合は、そのエラーに従って Vercel の認証情報との一致を確認します。[CLI からの公開手順](https://vercel.com/docs/projects/deploy-from-cli)
+
 次の13個を、ODDSHOT の Vercel プロジェクトの Environment Variables に Production 用として登録します。秘密値は現在の `.env.local` から引き継ぎます。環境変数を変更した場合は、新しいデプロイに反映されます。`.env.local` は公開ファイルや Git に含めません。[Vercel の環境変数](https://vercel.com/docs/environment-variables)
 
 | 環境変数 | 本番の値 |
